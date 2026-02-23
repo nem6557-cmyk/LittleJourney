@@ -1,12 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontSizes, Shadows, Spacing } from '../theme/colors';
+import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 
+// Auth screens
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { SignUpScreen } from '../screens/auth/SignUpScreen';
+import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
+import { DaycareOnboardingScreen } from '../screens/auth/DaycareOnboardingScreen';
+import { InviteCodeScreen } from '../screens/auth/InviteCodeScreen';
+
+// App screens
 import { TimelineScreen } from '../screens/parent/TimelineScreen';
 import { MessagesScreen } from '../screens/shared/MessagesScreen';
 import { DailyReportScreen } from '../screens/parent/DailyReportScreen';
@@ -15,6 +23,8 @@ import { ProfileScreen } from '../screens/shared/ProfileScreen';
 import { CaregiverDashboard } from '../screens/caregiver/CaregiverDashboard';
 
 const Tab = createBottomTabNavigator();
+
+type AuthScreen = 'login' | 'signup' | 'forgot-password';
 
 const tabIconMap: Record<string, { focused: keyof typeof Ionicons.glyphMap; default: keyof typeof Ionicons.glyphMap }> = {
   Home: { focused: 'home', default: 'home-outline' },
@@ -25,24 +35,37 @@ const tabIconMap: Record<string, { focused: keyof typeof Ionicons.glyphMap; defa
   Profile: { focused: 'person-circle', default: 'person-circle-outline' },
 };
 
-export const AppNavigator = () => {
-  const { isAuthenticated, isLoading, login, currentRole, unreadCount } = useApp();
+// ============================================================
+// Auth Flow (not authenticated)
+// ============================================================
 
-  // Loading state while checking persisted auth
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer} accessibilityLabel="Loading app" accessibilityRole="none">
-        <Text style={styles.loadingLogo}>🦋</Text>
-        <Text style={styles.loadingTitle}>Little Journey</Text>
-        <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.lg }} />
-      </View>
-    );
-  }
+const AuthNavigator = () => {
+  const [currentScreen, setCurrentScreen] = useState<AuthScreen>('login');
 
-  // Login / Onboarding screen
-  if (!isAuthenticated) {
-    return <LoginScreen onLogin={(role) => login(role)} />;
+  switch (currentScreen) {
+    case 'signup':
+      return <SignUpScreen onNavigateToLogin={() => setCurrentScreen('login')} />;
+    case 'forgot-password':
+      return <ForgotPasswordScreen onNavigateToLogin={() => setCurrentScreen('login')} />;
+    case 'login':
+    default:
+      return (
+        <LoginScreen
+          onNavigateToSignUp={() => setCurrentScreen('signup')}
+          onNavigateToForgotPassword={() => setCurrentScreen('forgot-password')}
+        />
+      );
   }
+};
+
+// ============================================================
+// Main App (authenticated)
+// ============================================================
+
+const MainAppNavigator = () => {
+  const { profile } = useAuth();
+  const { unreadCount } = useApp();
+  const currentRole = profile?.role || 'parent';
 
   return (
     <NavigationContainer>
@@ -79,7 +102,7 @@ export const AppNavigator = () => {
           },
         })}
       >
-        {currentRole === 'parent' ? (
+        {currentRole === 'parent' || currentRole === 'family' || currentRole === 'pediatrician' ? (
           <>
             <Tab.Screen name="Home" component={TimelineScreen} />
             <Tab.Screen name="Messages" component={MessagesScreen} />
@@ -99,6 +122,48 @@ export const AppNavigator = () => {
       </Tab.Navigator>
     </NavigationContainer>
   );
+};
+
+// ============================================================
+// Root Navigator
+// ============================================================
+
+export const AppNavigator = () => {
+  const { isAuthenticated, isLoading, profile, needsOnboarding, isDemoMode } = useAuth();
+
+  // Loading state while checking persisted auth
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer} accessibilityLabel="Loading app" accessibilityRole="none">
+        <Text style={styles.loadingLogo}>🦋</Text>
+        <Text style={styles.loadingTitle}>Little Journey</Text>
+        <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.lg }} />
+      </View>
+    );
+  }
+
+  // Not authenticated → show auth flow
+  if (!isAuthenticated) {
+    return <AuthNavigator />;
+  }
+
+  // Demo mode → skip onboarding checks, go straight to app
+  if (isDemoMode) {
+    return <MainAppNavigator />;
+  }
+
+  // Authenticated but admin without daycare → onboarding
+  if (needsOnboarding) {
+    return <DaycareOnboardingScreen />;
+  }
+
+  // Authenticated but no daycare (parent/caregiver) → invite code
+  if (profile && !profile.daycare_id && (profile.role === 'parent' || profile.role === 'caregiver' || profile.role === 'family')) {
+    return <InviteCodeScreen />;
+  }
+
+  // Fully authenticated and onboarded → main app
+  return <MainAppNavigator />;
 };
 
 const styles = StyleSheet.create({

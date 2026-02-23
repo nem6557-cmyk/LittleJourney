@@ -5,7 +5,7 @@ type TimelineInsert = Database['public']['Tables']['timeline_entries']['Insert']
 type TimelineUpdate = Database['public']['Tables']['timeline_entries']['Update'];
 
 export const timelineService = {
-  getEntries: async (childId: string, options?: { limit?: number; offset?: number; type?: string }) => {
+  getEntries: async (childId: string, options?: { limit?: number; offset?: number; type?: Database['public']['Tables']['timeline_entries']['Row']['activity_type'] }) => {
     let query = supabase
       .from('timeline_entries')
       .select(`

@@ -19,7 +19,7 @@ export const signUpSchema = z.object({
     .regex(/[0-9]/, 'Password must contain at least one number'),
   confirmPassword: z.string(),
   role: z.enum(['parent', 'caregiver', 'admin']),
-  agreeToTerms: z.literal(true, { errorMap: () => ({ message: 'You must agree to the terms' }) }),
+  agreeToTerms: z.boolean().refine(val => val === true, { message: 'You must agree to the Terms of Service' }),
   coppaConsent: z.boolean().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Passwords do not match',
@@ -91,7 +91,7 @@ export const timelineEntrySchema = z.object({
   description: z.string().max(2000).optional(),
   mood: z.enum(['happy', 'calm', 'sleepy', 'fussy', 'playful']).optional(),
   isUrgent: z.boolean().default(false),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 // ============================================================

@@ -31,15 +31,26 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['daycares']['Row'], 'id' | 'created_at' | 'updated_at' | 'stripe_onboarding_complete' | 'max_children' | 'max_classrooms'> & {
+        Insert: Omit<Database['public']['Tables']['daycares']['Row'], 'id' | 'created_at' | 'updated_at' | 'stripe_onboarding_complete' | 'max_children' | 'max_classrooms' | 'logo_url' | 'stripe_account_id' | 'subscription_tier' | 'trial_ends_at' | 'address' | 'city' | 'state' | 'zip' | 'phone' | 'email'> & {
           id?: string;
           created_at?: string;
           updated_at?: string;
           stripe_onboarding_complete?: boolean;
           max_children?: number;
           max_classrooms?: number;
+          logo_url?: string | null;
+          stripe_account_id?: string | null;
+          subscription_tier?: 'trial' | 'starter' | 'professional' | 'enterprise';
+          trial_ends_at?: string | null;
+          address?: string | null;
+          city?: string | null;
+          state?: string | null;
+          zip?: string | null;
+          phone?: string | null;
+          email?: string | null;
         };
         Update: Partial<Database['public']['Tables']['daycares']['Insert']>;
+        Relationships: [];
       };
 
       classrooms: {
@@ -56,6 +67,14 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['classrooms']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'classrooms_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       profiles: {
@@ -78,6 +97,14 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['profiles']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'profiles_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       children: {
@@ -101,6 +128,20 @@ export interface Database {
           allergies?: string[];
         };
         Update: Partial<Database['public']['Tables']['children']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'children_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'children_classroom_id_fkey';
+            columns: ['classroom_id'];
+            referencedRelation: 'classrooms';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       parent_children: {
@@ -116,6 +157,20 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['parent_children']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'parent_children_parent_id_fkey';
+            columns: ['parent_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'parent_children_child_id_fkey';
+            columns: ['child_id'];
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       caregiver_classrooms: {
@@ -132,6 +187,20 @@ export interface Database {
           is_lead?: boolean;
         };
         Update: Partial<Database['public']['Tables']['caregiver_classrooms']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'caregiver_classrooms_caregiver_id_fkey';
+            columns: ['caregiver_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'caregiver_classrooms_classroom_id_fkey';
+            columns: ['classroom_id'];
+            referencedRelation: 'classrooms';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       timeline_entries: {
@@ -159,6 +228,26 @@ export interface Database {
           metadata?: Json;
         };
         Update: Partial<Database['public']['Tables']['timeline_entries']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'timeline_entries_child_id_fkey';
+            columns: ['child_id'];
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'timeline_entries_author_id_fkey';
+            columns: ['author_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'timeline_entries_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       comments: {
@@ -174,6 +263,20 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['comments']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'comments_timeline_entry_id_fkey';
+            columns: ['timeline_entry_id'];
+            referencedRelation: 'timeline_entries';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'comments_author_id_fkey';
+            columns: ['author_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       reactions: {
@@ -189,6 +292,20 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['reactions']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'reactions_timeline_entry_id_fkey';
+            columns: ['timeline_entry_id'];
+            referencedRelation: 'timeline_entries';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'reactions_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       conversations: {
@@ -206,6 +323,14 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['conversations']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'conversations_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       conversation_members: {
@@ -217,12 +342,27 @@ export interface Database {
           is_muted: boolean;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['conversation_members']['Row'], 'id' | 'created_at' | 'is_muted'> & {
+        Insert: Omit<Database['public']['Tables']['conversation_members']['Row'], 'id' | 'created_at' | 'is_muted' | 'last_read_at'> & {
           id?: string;
           created_at?: string;
           is_muted?: boolean;
+          last_read_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['conversation_members']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'conversation_members_conversation_id_fkey';
+            columns: ['conversation_id'];
+            referencedRelation: 'conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'conversation_members_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       messages: {
@@ -242,6 +382,20 @@ export interface Database {
           is_urgent?: boolean;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'messages_conversation_id_fkey';
+            columns: ['conversation_id'];
+            referencedRelation: 'conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'messages_sender_id_fkey';
+            columns: ['sender_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       notifications: {
@@ -262,6 +416,20 @@ export interface Database {
           data?: Json;
         };
         Update: Partial<Database['public']['Tables']['notifications']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'notifications_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       attendance: {
@@ -278,11 +446,30 @@ export interface Database {
           notes: string | null;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['attendance']['Row'], 'id' | 'created_at'> & {
+        Insert: Omit<Database['public']['Tables']['attendance']['Row'], 'id' | 'created_at' | 'check_in_at' | 'check_in_by' | 'check_out_at' | 'check_out_by' | 'notes'> & {
           id?: string;
           created_at?: string;
+          check_in_at?: string | null;
+          check_in_by?: string | null;
+          check_out_at?: string | null;
+          check_out_by?: string | null;
+          notes?: string | null;
         };
         Update: Partial<Database['public']['Tables']['attendance']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'attendance_child_id_fkey';
+            columns: ['child_id'];
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'attendance_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       incidents: {
@@ -307,6 +494,26 @@ export interface Database {
           photo_urls?: string[];
         };
         Update: Partial<Database['public']['Tables']['incidents']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'incidents_child_id_fkey';
+            columns: ['child_id'];
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'incidents_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'incidents_reported_by_fkey';
+            columns: ['reported_by'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       milestones: {
@@ -327,6 +534,14 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['milestones']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'milestones_child_id_fkey';
+            columns: ['child_id'];
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       invoices: {
@@ -344,11 +559,34 @@ export interface Database {
           line_items: Json;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['invoices']['Row'], 'id' | 'created_at'> & {
+        Insert: Omit<Database['public']['Tables']['invoices']['Row'], 'id' | 'created_at' | 'stripe_invoice_id' | 'paid_at' | 'status'> & {
           id?: string;
           created_at?: string;
+          stripe_invoice_id?: string | null;
+          paid_at?: string | null;
+          status?: 'draft' | 'pending' | 'paid' | 'overdue' | 'void';
         };
         Update: Partial<Database['public']['Tables']['invoices']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'invoices_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoices_parent_id_fkey';
+            columns: ['parent_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoices_child_id_fkey';
+            columns: ['child_id'];
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       calendar_events: {
@@ -371,6 +609,20 @@ export interface Database {
           all_day?: boolean;
         };
         Update: Partial<Database['public']['Tables']['calendar_events']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'calendar_events_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'calendar_events_created_by_fkey';
+            columns: ['created_by'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       learning_plans: {
@@ -389,6 +641,20 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['learning_plans']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'learning_plans_classroom_id_fkey';
+            columns: ['classroom_id'];
+            referencedRelation: 'classrooms';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'learning_plans_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       subscriptions: {
@@ -403,13 +669,23 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['subscriptions']['Row'], 'id' | 'created_at' | 'updated_at' | 'child_count'> & {
+        Insert: Omit<Database['public']['Tables']['subscriptions']['Row'], 'id' | 'created_at' | 'updated_at' | 'child_count' | 'stripe_subscription_id' | 'current_period_end'> & {
           id?: string;
           created_at?: string;
           updated_at?: string;
           child_count?: number;
+          stripe_subscription_id?: string | null;
+          current_period_end?: string | null;
         };
         Update: Partial<Database['public']['Tables']['subscriptions']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'subscriptions_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       parent_subscriptions: {
@@ -430,6 +706,20 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['parent_subscriptions']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'parent_subscriptions_parent_id_fkey';
+            columns: ['parent_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'parent_subscriptions_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          }
+        ];
       };
 
       invite_codes: {
@@ -451,8 +741,24 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['invite_codes']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'invite_codes_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invite_codes_created_by_fkey';
+            columns: ['created_by'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
       };
     };
+
+    Views: Record<string, never>;
 
     Functions: {
       get_user_daycare_id: {
@@ -464,6 +770,10 @@ export interface Database {
         Returns: string | null;
       };
     };
+
+    Enums: Record<string, never>;
+
+    CompositeTypes: Record<string, never>;
   };
 }
 

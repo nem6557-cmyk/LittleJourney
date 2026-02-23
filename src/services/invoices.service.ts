@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import type { Database } from '../types/database';
 
 export const invoicesService = {
   getParentInvoices: async (parentId: string) => {
@@ -11,7 +12,7 @@ export const invoicesService = {
     return data;
   },
 
-  getDaycareInvoices: async (daycareId: string, options?: { status?: string }) => {
+  getDaycareInvoices: async (daycareId: string, options?: { status?: Database['public']['Tables']['invoices']['Row']['status'] }) => {
     let query = supabase
       .from('invoices')
       .select('*, parent:profiles!parent_id(first_name, last_name, email), child:children!child_id(first_name, last_name)')

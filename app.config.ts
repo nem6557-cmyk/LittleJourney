@@ -51,6 +51,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         color: '#6C63FF',
       },
     ],
+    '@sentry/react-native',
   ],
   extra: {
     eas: {
