@@ -31,7 +31,18 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
 .env*.local
+
+# Supabase local
+supabase/.temp/
+
+# Stripe
+google-services.json
+
+# Sentry
+.sentryclirc
 
 # typescript
 *.tsbuildinfo
