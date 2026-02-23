@@ -1,4 +1,5 @@
-export const Colors = {
+// ── Light theme colors (default) ──
+export const LightColors = {
   // Primary palette — warm & approachable
   primary: '#6C63FF',
   primaryLight: '#A5A0FF',
@@ -63,6 +64,75 @@ export const Colors = {
   checkout: '#FF5722',
 };
 
+// ── Dark theme colors ──
+export const DarkColors: typeof LightColors = {
+  // Primary palette — same hues, slightly adjusted for dark bg
+  primary: '#8B83FF',
+  primaryLight: '#A5A0FF',
+  primaryDark: '#6C63FF',
+
+  // Secondary / accent
+  secondary: '#FF6B9D',
+  secondaryLight: '#FF9EC0',
+  accent: '#FFB347',
+  accentLight: '#FFD699',
+
+  // Warm gradients (same — they're decorative)
+  gradientStart: '#667eea',
+  gradientEnd: '#764ba2',
+  gradientWarm: ['#f093fb', '#f5576c'] as string[],
+  gradientSky: ['#4facfe', '#00f2fe'] as string[],
+  gradientSunset: ['#fa709a', '#fee140'] as string[],
+  gradientMint: ['#a8edea', '#fed6e3'] as string[],
+  gradientPeach: ['#ffecd2', '#fcb69f'] as string[],
+
+  // Status colors — brighter variants for dark bg
+  success: '#66BB6A',
+  successLight: '#1B3A1B',
+  warning: '#FFA726',
+  warningLight: '#3A2E1B',
+  danger: '#EF5350',
+  dangerLight: '#3A1B1B',
+  info: '#42A5F5',
+  infoLight: '#1B2E3A',
+
+  // Mood colors
+  moodHappy: '#FFD93D',
+  moodCalm: '#6BCB77',
+  moodSleepy: '#9B59B6',
+  moodFussy: '#FF6B6B',
+  moodPlayful: '#4ECDC4',
+
+  // Neutrals — inverted
+  white: '#FFFFFF',
+  background: '#121118',
+  backgroundWarm: '#1A1520',
+  card: '#1E1C2E',
+  cardShadow: 'rgba(0, 0, 0, 0.3)',
+  border: '#2E2C40',
+  borderLight: '#252338',
+  textPrimary: '#ECEAF5',
+  textSecondary: '#A9A6C0',
+  textMuted: '#6B6888',
+  textWhite: '#FFFFFF',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+
+  // Activity type colors — slightly brighter
+  meal: '#FFA726',
+  nap: '#AB6CC5',
+  diaper: '#5ADCD2',
+  activity: '#8B83FF',
+  milestone: '#FFE066',
+  photo: '#FF85AD',
+  note: '#42A5F5',
+  medication: '#EF5350',
+  checkin: '#66BB6A',
+  checkout: '#FF7043',
+};
+
+// ── Default export: light theme (backward compatible) ──
+export const Colors = LightColors;
+
 export const Shadows = {
   small: {
     shadowColor: Colors.primaryDark,
@@ -82,6 +152,30 @@ export const Shadows = {
     shadowColor: Colors.primaryDark,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+};
+
+export const DarkShadows: typeof Shadows = {
+  small: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  medium: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  large: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
     shadowRadius: 24,
     elevation: 8,
   },

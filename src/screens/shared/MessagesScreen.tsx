@@ -20,6 +20,7 @@ export const MessagesScreen = () => {
   const [inputText, setInputText] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
+  const [messageFilter, setMessageFilter] = useState<'all' | 'unread' | 'urgent'>('all');
   const [callModal, setCallModal] = useState<null | 'voice' | 'video'>(null);
   const [callTimer, setCallTimer] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -68,17 +69,39 @@ export const MessagesScreen = () => {
   );
 
   const filteredConversations = useMemo(() => {
-    if (!localSearch.trim()) return conversations;
-    const q = localSearch.toLowerCase();
-    return conversations.filter((c) => {
-      const otherNames = c.participants
-        .filter((p) => p.id !== currentUser.id)
-        .map((p) => p.name.toLowerCase())
-        .join(' ');
-      const title = (c.title || '').toLowerCase();
-      return otherNames.includes(q) || title.includes(q) || c.lastMessage.text.toLowerCase().includes(q);
-    });
-  }, [conversations, localSearch, currentUser.id]);
+    let result = conversations;
+
+    // Apply filter
+    if (messageFilter === 'unread') {
+      result = result.filter((c) => {
+        const unread = messages.filter(
+          (m) => m.conversationId === c.id && !m.read && m.senderId !== currentUser.id
+        ).length;
+        return unread > 0;
+      });
+    } else if (messageFilter === 'urgent') {
+      result = result.filter((c) => {
+        return messages.some(
+          (m) => m.conversationId === c.id && m.isUrgent
+        );
+      });
+    }
+
+    // Apply search
+    if (localSearch.trim()) {
+      const q = localSearch.toLowerCase();
+      result = result.filter((c) => {
+        const otherNames = c.participants
+          .filter((p) => p.id !== currentUser.id)
+          .map((p) => p.name.toLowerCase())
+          .join(' ');
+        const title = (c.title || '').toLowerCase();
+        return otherNames.includes(q) || title.includes(q) || c.lastMessage.text.toLowerCase().includes(q);
+      });
+    }
+
+    return result;
+  }, [conversations, messages, localSearch, messageFilter, currentUser.id]);
 
   const getConversationTitle = (conv: Conversation) => {
     if (conv.title) return conv.title;
@@ -144,6 +167,26 @@ export const MessagesScreen = () => {
               </TouchableOpacity>
             )}
           </View>
+        </View>
+
+        {/* Message filter chips */}
+        <View style={styles.msgFilterRow}>
+          {([
+            { key: 'all' as const, label: 'All' },
+            { key: 'unread' as const, label: 'Unread' },
+            { key: 'urgent' as const, label: 'Urgent' },
+          ]).map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.msgFilterChip, messageFilter === f.key && styles.msgFilterChipActive]}
+              onPress={() => setMessageFilter(f.key)}
+              accessibilityLabel={`Filter by ${f.label}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: messageFilter === f.key }}
+            >
+              <Text style={[styles.msgFilterText, messageFilter === f.key && styles.msgFilterTextActive]}>{f.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.convListContent}>
@@ -461,6 +504,13 @@ const styles = StyleSheet.create({
 
   // Conversation list
   convListContent: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
+  // Message filter chips
+  msgFilterRow: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.sm },
+  msgFilterChip: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.round, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.borderLight },
+  msgFilterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  msgFilterText: { fontSize: FontSizes.sm, fontWeight: '600', color: Colors.textMuted },
+  msgFilterTextActive: { color: Colors.white },
+
   encryptionNotice: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.sm, gap: 4, marginBottom: Spacing.sm },
   encryptionText: { fontSize: FontSizes.xs, color: Colors.textMuted },
   convItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, marginBottom: Spacing.sm, gap: Spacing.md },

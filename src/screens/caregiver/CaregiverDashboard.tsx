@@ -323,7 +323,7 @@ export const CaregiverDashboard = () => {
           <Text style={styles.sectionTitle}>Quick Log for {selectedChild.firstName}</Text>
           <View style={styles.actionsGrid}>
             {quickActions.map((action) => (
-              <TouchableOpacity key={action.type} style={[styles.actionCard, Shadows.small]} onPress={() => handleQuickAction(action)}>
+              <TouchableOpacity key={action.type} style={[styles.actionCard, Shadows.small]} onPress={() => handleQuickAction(action)} accessibilityLabel={`Log ${action.label} for ${selectedChild.firstName}`} accessibilityRole="button">
                 <View style={[styles.actionIcon, { backgroundColor: action.color + '18' }]}>
                   <Text style={styles.actionEmoji}>{action.emoji}</Text>
                 </View>
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
   chipNameActive: { color: Colors.white },
   chipStatus: { width: 8, height: 8, borderRadius: 4, marginLeft: Spacing.sm },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  actionCard: { backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center', width: '23%', flexGrow: 1 },
+  actionCard: { backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center', width: '22%', minWidth: 72, flexGrow: 1, maxWidth: '25%' },
   actionIcon: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.sm },
   actionEmoji: { fontSize: 22 },
   actionLabel: { fontSize: FontSizes.xs, color: Colors.textSecondary, fontWeight: '600' },

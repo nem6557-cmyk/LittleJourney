@@ -18,6 +18,10 @@ import {
 
 interface AppContextType {
   // Auth / role
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (role: UserRole) => void;
+  logout: () => void;
   currentRole: UserRole;
   switchRole: () => void;
   currentUser: User;
@@ -102,6 +106,8 @@ const classroomChildren: Child[] = [
 ];
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentRole, setCurrentRole] = useState<UserRole>('parent');
   const [selectedChildId, setSelectedChildId] = useState('child1');
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>(initialTimeline);
@@ -118,6 +124,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const currentUser = currentRole === 'parent' ? parentUser : caregiverUser;
   const allChildren = currentRole === 'parent' ? [layla, adam] : classroomChildren;
   const selectedChild = allChildren.find((c) => c.id === selectedChildId) || layla;
+
+  const login = useCallback((role: UserRole) => {
+    setCurrentRole(role === 'caregiver' ? 'caregiver' : 'parent');
+    setSelectedChildId('child1');
+    setIsAuthenticated(true);
+    AsyncStorage.setItem('littlejourney_auth', JSON.stringify({ authenticated: true, role })).catch(() => {});
+  }, []);
+
+  const logout = useCallback(() => {
+    setIsAuthenticated(false);
+    AsyncStorage.removeItem('littlejourney_auth').catch(() => {});
+  }, []);
 
   const switchRole = useCallback(() => {
     setCurrentRole((prev) => (prev === 'parent' ? 'caregiver' : 'parent'));
@@ -502,10 +520,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => clearTimeout(timer);
   }, [timelineEntries, messages, conversations, notifications, incidents, attendance, invoices, isCheckedIn]);
 
-  // Load persisted state on mount
+  // Load persisted state and auth on mount
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Check auth state
+        const authRaw = await AsyncStorage.getItem('littlejourney_auth');
+        if (authRaw) {
+          const authData = JSON.parse(authRaw);
+          if (authData.authenticated) {
+            setIsAuthenticated(true);
+            if (authData.role) setCurrentRole(authData.role);
+          }
+        }
+
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const data = JSON.parse(raw);
@@ -520,6 +548,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
       } catch {
         // Use defaults on error
+      } finally {
+        setIsLoading(false);
       }
     };
     loadData();
@@ -541,6 +571,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const value = useMemo(
     () => ({
+      isAuthenticated, isLoading, login, logout,
       currentRole, switchRole, currentUser,
       children: allChildren, selectedChild, selectChild,
       timelineEntries, addTimelineEntry, addComment, deleteComment, toggleReaction,
@@ -556,6 +587,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       generateDailyNarrative, generateHighlights,
     }),
     [
+      isAuthenticated, isLoading, login, logout,
       currentRole, switchRole, currentUser,
       allChildren, selectedChild, selectChild,
       timelineEntries, addTimelineEntry, addComment, deleteComment, toggleReaction,

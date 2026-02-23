@@ -119,6 +119,8 @@ export const TimelineScreen = () => {
               <TouchableOpacity
                 style={styles.notificationBtn}
                 onPress={() => setShowNotifications(!showNotifications)}
+                accessibilityLabel={`Notifications${unreadNotificationCount > 0 ? `, ${unreadNotificationCount} unread` : ''}`}
+                accessibilityRole="button"
               >
                 <Ionicons name="notifications-outline" size={22} color={Colors.white} />
                 {unreadNotificationCount > 0 && (
@@ -252,6 +254,9 @@ export const TimelineScreen = () => {
                     key={child.id}
                     style={[styles.childSelectorChip, isActive && styles.childSelectorChipActive]}
                     onPress={() => selectChild(child.id)}
+                    accessibilityLabel={`View ${child.firstName}'s timeline`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
                   >
                     <View style={[styles.childSelectorAvatar, isActive && { backgroundColor: Colors.white }]}>
                       <Text style={[styles.childSelectorAvatarText, isActive && { color: Colors.primary }]}>
@@ -289,6 +294,7 @@ export const TimelineScreen = () => {
               placeholderTextColor={Colors.textMuted}
               value={searchText}
               onChangeText={setSearchText}
+              accessibilityLabel="Search timeline entries"
             />
             {searchText.length > 0 && (
               <TouchableOpacity onPress={() => setSearchText('')}>
@@ -305,6 +311,9 @@ export const TimelineScreen = () => {
               key={f.type}
               style={[styles.filterChip, activeFilter === f.type && styles.filterChipActive]}
               onPress={() => setActiveFilter(f.type)}
+              accessibilityLabel={`Filter by ${f.label}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: activeFilter === f.type }}
             >
               <Text style={[styles.filterChipText, activeFilter === f.type && styles.filterChipTextActive]}>
                 {f.label}

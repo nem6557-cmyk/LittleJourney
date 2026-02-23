@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, FontSizes, Shadows } from '../theme/colors';
+import { Colors, FontSizes, Shadows, Spacing } from '../theme/colors';
 import { useApp } from '../context/AppContext';
 
+import { LoginScreen } from '../screens/auth/LoginScreen';
 import { TimelineScreen } from '../screens/parent/TimelineScreen';
 import { MessagesScreen } from '../screens/shared/MessagesScreen';
 import { DailyReportScreen } from '../screens/parent/DailyReportScreen';
@@ -25,7 +26,23 @@ const tabIconMap: Record<string, { focused: keyof typeof Ionicons.glyphMap; defa
 };
 
 export const AppNavigator = () => {
-  const { currentRole, unreadCount } = useApp();
+  const { isAuthenticated, isLoading, login, currentRole, unreadCount } = useApp();
+
+  // Loading state while checking persisted auth
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer} accessibilityLabel="Loading app" accessibilityRole="none">
+        <Text style={styles.loadingLogo}>🦋</Text>
+        <Text style={styles.loadingTitle}>Little Journey</Text>
+        <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.lg }} />
+      </View>
+    );
+  }
+
+  // Login / Onboarding screen
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={(role) => login(role)} />;
+  }
 
   return (
     <NavigationContainer>
@@ -36,15 +53,11 @@ export const AppNavigator = () => {
             const icons = tabIconMap[route.name] || tabIconMap.Home;
             const iconName = focused ? icons.focused : icons.default;
             return (
-              <View>
+              <View accessibilityLabel={`${route.name} tab`} accessibilityRole="tab">
                 <Ionicons name={iconName} size={22} color={color} />
                 {route.name === 'Messages' && unreadCount > 0 && (
-                  <View style={{
-                    position: 'absolute', top: -4, right: -8,
-                    backgroundColor: Colors.secondary, width: 16, height: 16,
-                    borderRadius: 8, justifyContent: 'center', alignItems: 'center',
-                  }}>
-                    <Text style={{ fontSize: 9, color: Colors.white, fontWeight: '700' }}>{unreadCount}</Text>
+                  <View style={styles.badge} accessibilityLabel={`${unreadCount} unread messages`}>
+                    <Text style={styles.badgeText}>{unreadCount}</Text>
                   </View>
                 )}
               </View>
@@ -87,3 +100,26 @@ export const AppNavigator = () => {
     </NavigationContainer>
   );
 };
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingLogo: { fontSize: 64, marginBottom: Spacing.md },
+  loadingTitle: { fontSize: FontSizes.xxl, fontWeight: '800', color: Colors.primary },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: Colors.secondary,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeText: { fontSize: 9, color: Colors.white, fontWeight: '700' },
+});

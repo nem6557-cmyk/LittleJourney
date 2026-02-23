@@ -722,7 +722,7 @@ const styles = StyleSheet.create({
   galleryTitle: { fontSize: FontSizes.lg, fontWeight: '700', color: Colors.textPrimary },
   monthHeader: { fontSize: FontSizes.md, fontWeight: '700', color: Colors.textSecondary, marginTop: Spacing.md, marginBottom: Spacing.sm },
   galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  galleryItem: { width: '31%', flexGrow: 1 },
+  galleryItem: { width: '31%', minWidth: 90, maxWidth: '32%' },
   galleryImage: { aspectRatio: 1, borderRadius: BorderRadius.md, backgroundColor: Colors.borderLight },
   favBadge: { position: 'absolute' as const, top: 4, right: 4, backgroundColor: Colors.danger, borderRadius: 10, width: 20, height: 20, justifyContent: 'center' as const, alignItems: 'center' as const },
   galleryLabel: { fontSize: FontSizes.xs, fontWeight: '600', color: Colors.textPrimary, marginTop: Spacing.xs },

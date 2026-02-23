@@ -5,13 +5,27 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
+import { useTheme } from '../../context/ThemeContext';
 import { learningPlans as samplePlans, sampleIncidents } from '../../data/sampleData';
 
 type SubScreen = null | 'child_profile' | 'family' | 'pickups' | 'health' | 'invoices' | 'invoice_detail' | 'notifications' | 'about'
   | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'lesson_plans' | 'incidents';
 
+interface MenuItem {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  subtitle?: string;
+  sub?: SubScreen;
+}
+
+interface MenuSection {
+  title: string;
+  items: MenuItem[];
+}
+
 export const ProfileScreen = () => {
-  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice } = useApp();
+  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout } = useApp();
+  const { isDark, toggleTheme } = useTheme();
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [smartNotifs, setSmartNotifs] = useState(true);
@@ -78,66 +92,66 @@ export const ProfileScreen = () => {
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: () => showAlert('Signed Out', 'You have been signed out.') },
+      { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
     ]);
   };
 
   const pendingAmount = invoices.filter((inv) => inv.status === 'pending').reduce((sum, inv) => sum + inv.amount, 0);
 
-  const parentMenuSections = [
+  const parentMenuSections: MenuSection[] = [
     {
       title: 'Child & Family',
       items: [
-        { icon: 'person-circle-outline' as const, label: `${selectedChild.firstName}'s Profile`, subtitle: 'Allergies, contacts, medical info', sub: 'child_profile' as SubScreen },
-        { icon: 'people-outline' as const, label: 'Family Network', subtitle: 'Manage who can see updates', sub: 'family' as SubScreen },
-        { icon: 'shield-checkmark-outline' as const, label: 'Authorized Pickups', subtitle: `${selectedChild.authorizedPickups.length} authorized people`, sub: 'pickups' as SubScreen },
-        { icon: 'medical-outline' as const, label: 'Health & Allergies', subtitle: selectedChild.allergies.length > 0 ? selectedChild.allergies.join(', ') : 'No known allergies', sub: 'health' as SubScreen },
-        { icon: 'alert-circle-outline' as const, label: 'Incident Reports', subtitle: `${sampleIncidents.length} report${sampleIncidents.length !== 1 ? 's' : ''} on file`, sub: 'incidents' as SubScreen },
+        { icon: 'person-circle-outline', label: `${selectedChild.firstName}'s Profile`, subtitle: 'Allergies, contacts, medical info', sub: 'child_profile' },
+        { icon: 'people-outline', label: 'Family Network', subtitle: 'Manage who can see updates', sub: 'family' },
+        { icon: 'shield-checkmark-outline', label: 'Authorized Pickups', subtitle: `${selectedChild.authorizedPickups.length} authorized people`, sub: 'pickups' },
+        { icon: 'medical-outline', label: 'Health & Allergies', subtitle: selectedChild.allergies.length > 0 ? selectedChild.allergies.join(', ') : 'No known allergies', sub: 'health' },
+        { icon: 'alert-circle-outline', label: 'Incident Reports', subtitle: `${sampleIncidents.length} report${sampleIncidents.length !== 1 ? 's' : ''} on file`, sub: 'incidents' },
       ],
     },
     {
       title: 'Communication',
       items: [
-        { icon: 'notifications-outline' as const, label: 'Notification Preferences', subtitle: smartNotifs ? 'Smart notifications enabled' : 'All notifications', sub: 'notifications' as SubScreen },
-        { icon: 'language-outline' as const, label: 'Language', subtitle: selectedLanguage, sub: 'language' as SubScreen },
-        { icon: 'chatbubbles-outline' as const, label: 'Translation Settings', subtitle: autoTranslate ? `Auto-translate to ${targetLanguage}` : 'Auto-translate: Off', sub: 'translation' as SubScreen },
+        { icon: 'notifications-outline', label: 'Notification Preferences', subtitle: smartNotifs ? 'Smart notifications enabled' : 'All notifications', sub: 'notifications' },
+        { icon: 'language-outline', label: 'Language', subtitle: selectedLanguage, sub: 'language' },
+        { icon: 'chatbubbles-outline', label: 'Translation Settings', subtitle: autoTranslate ? `Auto-translate to ${targetLanguage}` : 'Auto-translate: Off', sub: 'translation' },
       ],
     },
     {
       title: 'Billing',
       items: [
-        { icon: 'card-outline' as const, label: 'Payment Methods', subtitle: `${paymentCard.type} ending in ${paymentCard.last4}`, sub: 'payment_methods' as SubScreen },
-        { icon: 'receipt-outline' as const, label: 'Invoices & Receipts', subtitle: pendingAmount > 0 ? `$${pendingAmount.toFixed(2)} pending` : 'All paid', sub: 'invoices' as SubScreen },
-        { icon: 'document-text-outline' as const, label: 'Tax Documents', subtitle: '2025 tax receipt available' },
+        { icon: 'card-outline', label: 'Payment Methods', subtitle: `${paymentCard.type} ending in ${paymentCard.last4}`, sub: 'payment_methods' },
+        { icon: 'receipt-outline', label: 'Invoices & Receipts', subtitle: pendingAmount > 0 ? `$${pendingAmount.toFixed(2)} pending` : 'All paid', sub: 'invoices' },
+        { icon: 'document-text-outline', label: 'Tax Documents', subtitle: '2025 tax receipt available' },
       ],
     },
     {
       title: 'Privacy & Security',
       items: [
-        { icon: 'lock-closed-outline' as const, label: 'Privacy Settings', subtitle: 'COPPA compliant', sub: 'privacy' as SubScreen },
-        { icon: 'key-outline' as const, label: 'Change Password', sub: 'change_password' as SubScreen },
-        { icon: 'finger-print-outline' as const, label: 'Biometric Login', subtitle: biometric ? 'Enabled' : 'Disabled' },
-        { icon: 'cloud-download-outline' as const, label: 'Download My Data', sub: 'download_data' as SubScreen },
+        { icon: 'lock-closed-outline', label: 'Privacy Settings', subtitle: 'COPPA compliant', sub: 'privacy' },
+        { icon: 'key-outline', label: 'Change Password', sub: 'change_password' },
+        { icon: 'finger-print-outline', label: 'Biometric Login', subtitle: biometric ? 'Enabled' : 'Disabled' },
+        { icon: 'cloud-download-outline', label: 'Download My Data', sub: 'download_data' },
       ],
     },
   ];
 
-  const caregiverMenuSections = [
+  const caregiverMenuSections: MenuSection[] = [
     {
       title: 'Classroom',
       items: [
-        { icon: 'people-outline' as const, label: selectedChild.classroom || 'Classroom', subtitle: '8 children enrolled' },
-        { icon: 'calendar-outline' as const, label: 'Attendance', subtitle: 'View from Dashboard' },
-        { icon: 'book-outline' as const, label: 'Lesson Plans', subtitle: 'This week: Colors & Numbers', sub: 'lesson_plans' as SubScreen },
-        { icon: 'clipboard-outline' as const, label: 'Reports', subtitle: 'Generate daily reports' },
+        { icon: 'people-outline', label: selectedChild.classroom || 'Classroom', subtitle: '8 children enrolled' },
+        { icon: 'calendar-outline', label: 'Attendance', subtitle: 'View from Dashboard' },
+        { icon: 'book-outline', label: 'Lesson Plans', subtitle: 'This week: Colors & Numbers', sub: 'lesson_plans' },
+        { icon: 'clipboard-outline', label: 'Reports', subtitle: 'Generate daily reports' },
       ],
     },
     {
       title: 'Settings',
       items: [
-        { icon: 'notifications-outline' as const, label: 'Notifications', sub: 'notifications' as SubScreen },
-        { icon: 'cloud-offline-outline' as const, label: 'Offline Mode', subtitle: offlineMode ? 'Auto-sync when online' : 'Disabled' },
-        { icon: 'lock-closed-outline' as const, label: 'Privacy & Security', sub: 'privacy' as SubScreen },
+        { icon: 'notifications-outline', label: 'Notifications', sub: 'notifications' },
+        { icon: 'cloud-offline-outline', label: 'Offline Mode', subtitle: offlineMode ? 'Auto-sync when online' : 'Disabled' },
+        { icon: 'lock-closed-outline', label: 'Privacy & Security', sub: 'privacy' },
       ],
     },
   ];
@@ -731,6 +745,27 @@ export const ProfileScreen = () => {
               onValueChange={switchRole}
               trackColor={{ false: Colors.borderLight, true: Colors.primaryLight }}
               thumbColor={currentRole === 'caregiver' ? Colors.primary : Colors.textMuted}
+              accessibilityLabel="Switch between parent and caregiver view"
+              accessibilityRole="switch"
+            />
+          </View>
+        </View>
+
+        {/* Dark Mode Toggle */}
+        <View style={styles.roleSwitcher}>
+          <View style={[styles.roleSwitcherCard, Shadows.medium]}>
+            <Ionicons name={isDark ? 'moon' : 'sunny'} size={20} color={isDark ? Colors.accent : Colors.primary} />
+            <View style={styles.roleSwitcherInfo}>
+              <Text style={styles.roleSwitcherTitle}>Dark Mode</Text>
+              <Text style={styles.roleSwitcherDesc}>{isDark ? 'Switch to light theme' : 'Switch to dark theme'}</Text>
+            </View>
+            <Switch
+              value={isDark}
+              onValueChange={toggleTheme}
+              trackColor={{ false: Colors.borderLight, true: Colors.primaryLight }}
+              thumbColor={isDark ? Colors.accent : Colors.textMuted}
+              accessibilityLabel="Toggle dark mode"
+              accessibilityRole="switch"
             />
           </View>
         </View>
@@ -743,7 +778,7 @@ export const ProfileScreen = () => {
                 <TouchableOpacity
                   key={iIndex}
                   style={[styles.menuItem, iIndex < section.items.length - 1 && styles.menuItemBorder]}
-                  onPress={() => handleMenuTap(item.label, (item as any).sub)}
+                  onPress={() => handleMenuTap(item.label, item.sub)}
                 >
                   <View style={styles.menuItemIcon}>
                     <Ionicons name={item.icon} size={22} color={Colors.primary} />
