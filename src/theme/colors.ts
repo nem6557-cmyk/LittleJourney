@@ -62,6 +62,8 @@ export const LightColors = {
   medication: '#F44336',
   checkin: '#4CAF50',
   checkout: '#FF5722',
+  mood: '#FFD93D',
+  incident: '#F44336',
 };
 
 // ── Dark theme colors ──
@@ -128,6 +130,8 @@ export const DarkColors: typeof LightColors = {
   medication: '#EF5350',
   checkin: '#66BB6A',
   checkout: '#FF7043',
+  mood: '#FFE066',
+  incident: '#EF5350',
 };
 
 // ── Default export: light theme (backward compatible) ──

@@ -35,9 +35,11 @@ export const InvoiceDetailScreen: React.FC<InvoiceDetailProps> = ({
   const [isLoading, setIsLoading] = useState(false);
 
   const statusColors: Record<string, string> = {
+    draft: Colors.textMuted,
     pending: Colors.warning,
     paid: Colors.success,
     overdue: Colors.danger,
+    void: Colors.textMuted,
     cancelled: Colors.textMuted,
   };
 

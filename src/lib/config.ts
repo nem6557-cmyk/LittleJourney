@@ -20,28 +20,47 @@ export const config = {
   // App
   appName: 'LittleJourney',
   appVersion: '1.0.0',
+  supportEmail: 'support@littlejourney.app',
+  privacyEmail: 'privacy@littlejourney.app',
+  legalEmail: 'legal@littlejourney.app',
+  privacyPolicyUrl: 'https://littlejourney.app/privacy',
+  termsUrl: 'https://littlejourney.app/terms',
+  supportUrl: 'https://littlejourney.app/support',
 
   // Feature flags
   enableOfflineMode: true,
   enablePushNotifications: true,
   enableAnalytics: process.env.EXPO_PUBLIC_ENV === 'production',
 
-  // Subscription
+  // Subscription — price IDs are read from env or use dev placeholders
+  // In production, set these via EAS secrets or Supabase Edge Function env vars
   daycareTrial: {
     durationDays: 14,
   },
   plans: {
     daycare: {
-      starter: { id: 'price_starter', price: 2900, childLimit: 20, classroomLimit: 1 },
-      professional: { id: 'price_professional', price: 5900, childLimit: 50, classroomLimit: 5 },
-      enterprise: { id: 'price_enterprise', price: 9900, childLimit: -1, classroomLimit: -1 },
+      starter: {
+        id: process.env.EXPO_PUBLIC_STRIPE_PRICE_STARTER || 'price_starter_placeholder',
+        price: 2900, childLimit: 20, classroomLimit: 1,
+      },
+      professional: {
+        id: process.env.EXPO_PUBLIC_STRIPE_PRICE_PROFESSIONAL || 'price_professional_placeholder',
+        price: 5900, childLimit: 50, classroomLimit: 5,
+      },
+      enterprise: {
+        id: process.env.EXPO_PUBLIC_STRIPE_PRICE_ENTERPRISE || 'price_enterprise_placeholder',
+        price: 9900, childLimit: -1, classroomLimit: -1,
+      },
     },
     parent: {
       free: { id: 'price_parent_free', price: 0 },
-      premium: { id: 'price_parent_premium', price: 499 },
+      premium: {
+        id: process.env.EXPO_PUBLIC_STRIPE_PRICE_PARENT_PREMIUM || 'price_parent_premium_placeholder',
+        price: 499,
+      },
     },
   },
-} as const;
+};
 
 export const isDev = config.environment === 'development';
 export const isStaging = config.environment === 'staging';

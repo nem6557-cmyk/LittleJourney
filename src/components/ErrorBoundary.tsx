@@ -72,6 +72,92 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 }
 
+/**
+ * Lightweight per-screen error boundary.
+ * Shows a compact "Something went wrong" message with a Try Again button
+ * instead of the full-page error card used by the root ErrorBoundary.
+ */
+interface ScreenErrorBoundaryProps {
+  children: ReactNode;
+  onReset?: () => void;
+}
+
+interface ScreenErrorBoundaryState {
+  hasError: boolean;
+}
+
+export class ScreenErrorBoundary extends Component<ScreenErrorBoundaryProps, ScreenErrorBoundaryState> {
+  constructor(props: ScreenErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): ScreenErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ScreenErrorBoundary caught:', error, errorInfo);
+  }
+
+  handleReset = () => {
+    this.setState({ hasError: false });
+    this.props.onReset?.();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={screenStyles.container}>
+          <Ionicons name="alert-circle-outline" size={32} color={Colors.warning} />
+          <Text style={screenStyles.message}>Something went wrong</Text>
+          <TouchableOpacity
+            style={screenStyles.retryBtn}
+            onPress={this.handleReset}
+            accessibilityLabel="Try again"
+            accessibilityRole="button"
+          >
+            <Ionicons name="refresh" size={16} color={Colors.primary} />
+            <Text style={screenStyles.retryText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const screenStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.xl,
+    gap: Spacing.md,
+  },
+  message: {
+    fontSize: FontSizes.md,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    gap: Spacing.xs,
+  },
+  retryText: {
+    fontSize: FontSizes.sm,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,

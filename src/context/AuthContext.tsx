@@ -176,7 +176,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       role: role as any,
       daycare_id: 'demo-daycare',
       push_token: null,
-      coppa_consent_at: null,
+      coppa_consent_at: role === 'parent' ? new Date().toISOString() : null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });

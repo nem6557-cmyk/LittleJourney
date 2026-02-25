@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useStripe } from '@stripe/stripe-react-native';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 
 interface PaymentMethod {
@@ -18,13 +21,76 @@ interface PaymentMethodsScreenProps {
   onClose?: () => void;
 }
 
-// In production, these would come from Stripe via an Edge Function
-const mockMethods: PaymentMethod[] = [];
+/**
+ * Checks whether a Supabase Functions invocation error indicates the
+ * edge function has not been deployed yet (404 / relay error).
+ */
+const isEdgeFunctionMissing = (error: unknown): boolean => {
+  if (!error) return false;
+  const msg = typeof error === 'string' ? error : (error as any)?.message ?? '';
+  return (
+    msg.includes('404') ||
+    msg.includes('not found') ||
+    msg.includes('FunctionNotFound') ||
+    msg.includes('Relay error')
+  );
+};
 
 export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onClose }) => {
-  const [methods] = useState<PaymentMethod[]>(mockMethods);
-  const [isLoading, setIsLoading] = useState(false);
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { profile } = useAuth();
 
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingMethods, setIsFetchingMethods] = useState(true);
+
+  // -------------------------------------------------------------------
+  // Fetch saved payment methods from Supabase edge function
+  // -------------------------------------------------------------------
+  const fetchPaymentMethods = useCallback(async () => {
+    setIsFetchingMethods(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('list-payment-methods');
+
+      if (error) {
+        if (isEdgeFunctionMissing(error)) {
+          // Edge function not deployed yet – degrade gracefully
+          console.warn('[PaymentMethods] list-payment-methods edge function not deployed yet.');
+          setMethods([]);
+          return;
+        }
+        throw error;
+      }
+
+      if (data?.paymentMethods && Array.isArray(data.paymentMethods)) {
+        const mapped: PaymentMethod[] = data.paymentMethods.map((pm: any) => ({
+          id: pm.id,
+          brand: pm.card?.brand ?? 'unknown',
+          last4: pm.card?.last4 ?? '????',
+          expMonth: pm.card?.exp_month ?? 0,
+          expYear: pm.card?.exp_year ?? 0,
+          isDefault: pm.id === data.defaultPaymentMethodId,
+        }));
+        setMethods(mapped);
+      } else {
+        setMethods([]);
+      }
+    } catch (err) {
+      console.error('[PaymentMethods] Failed to fetch payment methods:', err);
+      // Don't show an alert on mount – just log and show empty state
+      setMethods([]);
+    } finally {
+      setIsFetchingMethods(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPaymentMethods();
+  }, [fetchPaymentMethods]);
+
+  // -------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------
   const getCardIcon = (brand: string) => {
     switch (brand.toLowerCase()) {
       case 'visa': return 'card';
@@ -33,14 +99,61 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     }
   };
 
+  // -------------------------------------------------------------------
+  // Add a new card via Stripe SetupIntent → Payment Sheet
+  // -------------------------------------------------------------------
   const handleAddCard = async () => {
     setIsLoading(true);
     try {
-      // In production: call Stripe SetupIntent Edge Function → open Payment Sheet
-      Alert.alert(
-        'Add Payment Method',
-        'This will open the Stripe payment sheet to securely add a new card.',
-      );
+      // 1. Request a SetupIntent client secret from the backend
+      const { data, error } = await supabase.functions.invoke('create-setup-intent');
+
+      if (error) {
+        if (isEdgeFunctionMissing(error)) {
+          Alert.alert(
+            'Stripe Setup Required',
+            'The payment backend is not configured yet. Please deploy the "create-setup-intent" edge function to enable card management.',
+          );
+          return;
+        }
+        throw new Error(
+          typeof error === 'string' ? error : (error as any)?.message ?? 'Failed to create setup intent',
+        );
+      }
+
+      const clientSecret: string | undefined = data?.clientSecret;
+      if (!clientSecret) {
+        throw new Error('No client secret returned from create-setup-intent');
+      }
+
+      // 2. Initialise the Stripe Payment Sheet in setup mode
+      const { error: initError } = await initPaymentSheet({
+        setupIntentClientSecret: clientSecret,
+        merchantDisplayName: 'LittleJourney',
+        // Optional: pass the customer's name / email for a better UX
+        ...(profile?.first_name && {
+          defaultBillingDetails: {
+            name: [profile.first_name, profile.last_name].filter(Boolean).join(' '),
+          },
+        }),
+      });
+
+      if (initError) {
+        throw new Error(initError.message);
+      }
+
+      // 3. Present the sheet to the user
+      const { error: presentError } = await presentPaymentSheet();
+
+      if (presentError) {
+        // User cancelled – not a real error
+        if (presentError.code === 'Canceled') return;
+        throw new Error(presentError.message);
+      }
+
+      // 4. Success – refresh the list
+      Alert.alert('Success', 'Your payment method has been added.');
+      await fetchPaymentMethods();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to add payment method');
     } finally {
@@ -48,6 +161,9 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     }
   };
 
+  // -------------------------------------------------------------------
+  // Remove (detach) a saved payment method
+  // -------------------------------------------------------------------
   const handleRemoveCard = (methodId: string) => {
     Alert.alert(
       'Remove Card',
@@ -57,12 +173,36 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => {
-            // In production: call Stripe detach payment method
-            Alert.alert('Removed', 'Payment method has been removed.');
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              const { error } = await supabase.functions.invoke('detach-payment-method', {
+                body: { paymentMethodId: methodId },
+              });
+
+              if (error) {
+                if (isEdgeFunctionMissing(error)) {
+                  Alert.alert(
+                    'Stripe Setup Required',
+                    'The payment backend is not configured yet. Please deploy the "detach-payment-method" edge function to enable card removal.',
+                  );
+                  return;
+                }
+                throw new Error(
+                  typeof error === 'string' ? error : (error as any)?.message ?? 'Failed to remove payment method',
+                );
+              }
+
+              Alert.alert('Removed', 'Payment method has been removed.');
+              await fetchPaymentMethods();
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to remove payment method');
+            } finally {
+              setIsLoading(false);
+            }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -77,7 +217,12 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
       <Text style={styles.title}>Payment Methods</Text>
       <Text style={styles.subtitle}>Manage your payment methods for subscriptions and invoices.</Text>
 
-      {methods.length === 0 ? (
+      {isFetchingMethods ? (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.emptyBody}>Loading payment methods...</Text>
+        </View>
+      ) : methods.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="card-outline" size={48} color={Colors.textMuted} />
           <Text style={styles.emptyTitle}>No Payment Methods</Text>

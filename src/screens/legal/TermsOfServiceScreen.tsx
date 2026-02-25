@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView, Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSizes } from '../../theme/colors';
+import { config } from '../../lib/config';
 
 interface TermsOfServiceScreenProps {
   onClose?: () => void;
@@ -61,7 +62,7 @@ export const TermsOfServiceScreen: React.FC<TermsOfServiceScreenProps> = ({ onCl
 
       <Text style={styles.sectionTitle}>9. Contact</Text>
       <Text style={styles.body}>
-        For questions about these terms, contact us at legal@littlejourney.app
+        For questions about these terms, contact us at {config.legalEmail}
       </Text>
 
       <View style={{ height: 40 }} />

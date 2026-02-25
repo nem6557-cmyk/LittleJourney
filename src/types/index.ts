@@ -33,12 +33,15 @@ export interface User {
 
 export interface Child {
   id: string;
+  daycareId?: string;        // maps to DB children.daycare_id
+  classroomId?: string;      // maps to DB children.classroom_id
   firstName: string;
   lastName: string;
   dateOfBirth: string;
   avatar?: string;
-  classroom?: string;
+  classroom?: string;        // denormalized classroom name (from join)
   allergies: string[];
+  medicalNotes?: string;     // maps to DB children.medical_notes
   emergencyContacts: EmergencyContact[];
   authorizedPickups: AuthorizedPerson[];
   pediatrician?: string;
@@ -72,17 +75,18 @@ export interface Comment {
 export interface TimelineEntry {
   id: string;
   childId: string;
-  type: ActivityType;
-  timestamp: string;
-  createdBy: User;
+  daycareId?: string;        // maps to DB timeline_entries.daycare_id
+  type: ActivityType;        // maps to DB timeline_entries.activity_type
+  timestamp: string;         // maps to DB timeline_entries.created_at
+  createdBy: User;           // joined from DB timeline_entries.author_id -> profiles
   title: string;
   description?: string;
-  details?: Record<string, any>;
-  photos?: string[];
+  details?: Record<string, any>;  // maps to DB timeline_entries.metadata
+  photos?: string[];         // maps to DB timeline_entries.photo_urls
   mood?: MoodType;
   reactions?: Reaction[];
   comments?: Comment[];
-  isUrgent?: boolean;
+  isUrgent?: boolean;        // maps to DB timeline_entries.is_urgent
 }
 
 export interface Reaction {
@@ -131,27 +135,32 @@ export interface Notification {
 export interface IncidentReport {
   id: string;
   childId: string;
-  childName: string;
-  reportedBy: User;
-  timestamp: string;
+  daycareId?: string;        // maps to DB incidents.daycare_id
+  childName: string;         // denormalized from join
+  reportedBy: User;          // joined from DB incidents.reported_by -> profiles
+  timestamp: string;         // maps to DB incidents.created_at
   type: 'fall' | 'bite' | 'scratch' | 'bump' | 'allergic_reaction' | 'illness' | 'other';
   severity: 'minor' | 'moderate' | 'serious';
-  location: string;
+  location?: string;         // maps to DB incidents.location (nullable)
   description: string;
-  actionTaken: string;
-  parentNotified: boolean;
-  witnessName?: string;
-  photos?: string[];
+  actionTaken: string;       // maps to DB incidents.action_taken
+  parentNotified: boolean;   // derived from DB incidents.parent_notified_at
+  witnessName?: string;      // maps to DB incidents.witness_name
+  photos?: string[];         // maps to DB incidents.photo_urls
 }
 
 export interface AttendanceRecord {
+  id?: string;               // maps to DB attendance.id
   childId: string;
-  childName: string;
+  daycareId?: string;        // maps to DB attendance.daycare_id
+  childName: string;         // denormalized from join
   date: string;
-  checkInTime?: string;
-  checkOutTime?: string;
+  checkInTime?: string;      // maps to DB attendance.check_in_at
+  checkInBy?: string;        // maps to DB attendance.check_in_by
+  checkOutTime?: string;     // maps to DB attendance.check_out_at
+  checkOutBy?: string;       // maps to DB attendance.check_out_by
   status: 'present' | 'absent' | 'late' | 'excused';
-  note?: string;
+  note?: string;             // maps to DB attendance.notes
 }
 
 export interface DailyReport {
@@ -175,12 +184,17 @@ export interface DailyReport {
 
 export interface CalendarEvent {
   id: string;
+  daycareId?: string;        // maps to DB calendar_events.daycare_id
+  classroomId?: string;      // maps to DB calendar_events.classroom_id
   title: string;
-  date: string;
-  time?: string;
+  date: string;              // maps to DB calendar_events.start_at
+  endDate?: string;          // maps to DB calendar_events.end_at
+  time?: string;             // legacy field for display
+  allDay?: boolean;          // maps to DB calendar_events.all_day
   type: 'event' | 'holiday' | 'conference' | 'vaccination' | 'closure' | 'birthday';
   description?: string;
   location?: string;
+  createdBy?: string;        // maps to DB calendar_events.created_by
 }
 
 export interface Milestone {
@@ -188,28 +202,38 @@ export interface Milestone {
   childId: string;
   title: string;
   category: 'cognitive' | 'motor' | 'social' | 'language' | 'self_care';
-  ageRange: string;
-  achievedDate?: string;
-  notes?: string;
-  photoUrl?: string;
+  ageRange?: string;         // maps to DB milestones.age_range (nullable)
+  achievedDate?: string;     // maps to DB milestones.achieved_at
+  notes?: string;            // maps to DB milestones.description
+  notedBy?: string;          // maps to DB milestones.noted_by
+  photoUrl?: string;         // maps to DB milestones.photo_url
 }
 
 export interface Invoice {
   id: string;
+  daycareId?: string;        // maps to DB invoices.daycare_id
+  parentId?: string;         // maps to DB invoices.parent_id
   childId: string;
+  stripeInvoiceId?: string;  // maps to DB invoices.stripe_invoice_id
   description: string;
-  amount: number;
-  dueDate: string;
-  paidDate?: string;
-  status: 'paid' | 'pending' | 'overdue';
-  items: { description: string; amount: number }[];
+  amount: number;            // maps to DB invoices.amount_cents (convert cents to dollars)
+  dueDate: string;           // maps to DB invoices.due_date
+  paidDate?: string;         // maps to DB invoices.paid_at
+  status: 'draft' | 'pending' | 'paid' | 'overdue' | 'void'; // matches DB enum
+  items: { description: string; amount: number }[]; // maps to DB invoices.line_items (Json)
 }
 
 export interface LearningPlan {
   id: string;
-  title: string;
-  week: string;
-  goals: string[];
-  activities: { name: string; description: string; completed: boolean }[];
-  caregiverId: string;
+  classroomId?: string;      // maps to DB learning_plans.classroom_id
+  daycareId?: string;        // maps to DB learning_plans.daycare_id
+  title?: string;            // maps to DB learning_plans.theme (nullable)
+  weekStart?: string;        // maps to DB learning_plans.week_start
+  /** @deprecated use weekStart instead */
+  week?: string;             // kept for backward compat with sample data
+  goals?: string[];          // frontend-only (not in DB schema)
+  activities: { name: string; description: string; completed: boolean }[]; // maps to DB learning_plans.activities (Json)
+  createdBy?: string;        // maps to DB learning_plans.created_by
+  /** @deprecated use createdBy instead */
+  caregiverId?: string;      // kept for backward compat with sample data
 }

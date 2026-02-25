@@ -33,6 +33,9 @@ export function trackScreen(screenName: string, params?: EventProperties): void 
  * Common analytics events used across the app.
  */
 export const AnalyticsEvents = {
+  // App lifecycle
+  APP_OPENED: 'app_opened',
+
   // Auth
   SIGN_UP: 'sign_up',
   SIGN_IN: 'sign_in',

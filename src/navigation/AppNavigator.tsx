@@ -14,6 +14,9 @@ import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { DaycareOnboardingScreen } from '../screens/auth/DaycareOnboardingScreen';
 import { InviteCodeScreen } from '../screens/auth/InviteCodeScreen';
 
+// Legal screens
+import { ConsentScreen } from '../screens/legal/ConsentScreen';
+
 // App screens
 import { TimelineScreen } from '../screens/parent/TimelineScreen';
 import { MessagesScreen } from '../screens/shared/MessagesScreen';
@@ -129,7 +132,7 @@ const MainAppNavigator = () => {
 // ============================================================
 
 export const AppNavigator = () => {
-  const { isAuthenticated, isLoading, profile, needsOnboarding, isDemoMode } = useAuth();
+  const { isAuthenticated, isLoading, profile, needsOnboarding, isDemoMode, updateProfile, refreshProfile, signOut, daycare } = useAuth();
 
   // Loading state while checking persisted auth
   // Also show loading if authenticated via Supabase but profile hasn't loaded yet
@@ -161,6 +164,24 @@ export const AppNavigator = () => {
   // Authenticated but no daycare (parent/caregiver) → invite code
   if (profile && !profile.daycare_id && (profile.role === 'parent' || profile.role === 'caregiver' || profile.role === 'family')) {
     return <InviteCodeScreen />;
+  }
+
+  // Parent without COPPA consent → consent screen (fixes #9, #10)
+  if (profile && profile.role === 'parent' && !profile.coppa_consent_at) {
+    return (
+      <ConsentScreen
+        parentName={`${profile.first_name || ''} ${profile.last_name || ''}`.trim()}
+        childName=""
+        daycareName={daycare?.name || 'Your Daycare'}
+        onConsent={async () => {
+          await updateProfile({ coppa_consent_at: new Date().toISOString() });
+          await refreshProfile();
+        }}
+        onDecline={() => {
+          signOut();
+        }}
+      />
+    );
   }
 
   // Fully authenticated and onboarded → main app

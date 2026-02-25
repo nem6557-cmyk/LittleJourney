@@ -125,6 +125,29 @@ export async function clearPendingMutations(): Promise<void> {
 }
 
 /**
+ * Retry an async operation with exponential backoff.
+ * Useful for wrapping network calls that may fail transiently.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  delayMs = 1000,
+): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, delayMs * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Clear all cached data.
  */
 export async function clearCache(): Promise<void> {

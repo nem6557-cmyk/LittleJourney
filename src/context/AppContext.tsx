@@ -16,6 +16,8 @@ import {
   sampleInvoices as initialInvoices,
 } from '../data/sampleData';
 import { useAuth } from './AuthContext';
+import { supabase } from '../lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface AppContextType {
   // Auth / role
@@ -122,6 +124,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(initialAttendance);
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
   const [searchQuery, setSearchQuery] = useState('');
+  const [fetchedChildren, setFetchedChildren] = useState<Child[]>([]);
+  const [supabaseDataLoaded, setSupabaseDataLoaded] = useState(false);
 
   // Sync role from AuthContext when profile is available
   useEffect(() => {
@@ -146,8 +150,309 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return currentRole === 'parent' ? parentUser : caregiverUser;
   }, [auth.profile, currentRole]);
 
-  const allChildren = currentRole === 'parent' ? [layla, adam] : classroomChildren;
-  const selectedChild = allChildren.find((c) => c.id === selectedChildId) || layla;
+  // ── Fetch real data from Supabase when authenticated (fixes #11, #28) ──
+  useEffect(() => {
+    if (auth.isDemoMode || !auth.profile) {
+      // Demo mode or not logged in — use sample data
+      setSupabaseDataLoaded(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchSupabaseData = async () => {
+      try {
+        const profile = auth.profile!;
+        const role = (profile.role || 'parent') as UserRole;
+
+        // ── Fetch children based on role ──
+        let childrenData: any[] = [];
+        if (role === 'parent') {
+          // Parent: query parent_children joined with children
+          const { data, error } = await supabase
+            .from('parent_children')
+            .select('child_id, children(*)')
+            .eq('parent_id', profile.id);
+          if (!error && data) {
+            childrenData = data
+              .map((pc: any) => pc.children)
+              .filter(Boolean);
+          }
+        } else {
+          // Caregiver / Admin: query all children at the daycare
+          if (profile.daycare_id) {
+            const { data, error } = await supabase
+              .from('children')
+              .select('*')
+              .eq('daycare_id', profile.daycare_id);
+            if (!error && data) {
+              childrenData = data;
+            }
+          }
+        }
+
+        if (cancelled) return;
+
+        // Map DB children to app Child type
+        const mappedChildren: Child[] = childrenData.map((c: any) => ({
+          id: c.id,
+          firstName: c.first_name,
+          lastName: c.last_name,
+          dateOfBirth: c.date_of_birth,
+          avatar: c.avatar_url || undefined,
+          classroom: c.classroom_id || undefined,
+          allergies: c.allergies || [],
+          emergencyContacts: [],
+          authorizedPickups: [],
+        }));
+
+        if (mappedChildren.length > 0) {
+          setFetchedChildren(mappedChildren);
+          setSupabaseDataLoaded(true);
+          // Select the first child if current selection is invalid
+          if (!mappedChildren.find((c) => c.id === selectedChildId)) {
+            setSelectedChildId(mappedChildren[0].id);
+          }
+        }
+
+        const childIds = mappedChildren.map((c) => c.id);
+        if (childIds.length === 0) return;
+
+        // ── Fetch timeline entries ──
+        const { data: timelineData } = await supabase
+          .from('timeline_entries')
+          .select('*, profiles:author_id(id, first_name, last_name, email, role)')
+          .in('child_id', childIds)
+          .order('created_at', { ascending: false })
+          .limit(200);
+
+        if (!cancelled && timelineData && timelineData.length > 0) {
+          const mappedTimeline: TimelineEntry[] = timelineData.map((te: any) => {
+            const authorProfile = te.profiles;
+            return {
+              id: te.id,
+              childId: te.child_id,
+              type: te.activity_type,
+              timestamp: te.created_at,
+              createdBy: {
+                id: authorProfile?.id || te.author_id,
+                name: authorProfile ? `${authorProfile.first_name || ''} ${authorProfile.last_name || ''}`.trim() : 'Unknown',
+                role: (authorProfile?.role || 'caregiver') as UserRole,
+                email: authorProfile?.email || '',
+              },
+              title: te.title,
+              description: te.description || undefined,
+              details: te.metadata && typeof te.metadata === 'object' ? te.metadata as Record<string, any> : undefined,
+              photos: te.photo_urls || [],
+              mood: te.mood || undefined,
+              isUrgent: te.is_urgent,
+              reactions: [],
+              comments: [],
+            };
+          });
+          setTimelineEntries(mappedTimeline);
+        }
+
+        // ── Fetch conversations and messages ──
+        const { data: memberData } = await supabase
+          .from('conversation_members')
+          .select('conversation_id')
+          .eq('user_id', profile.id);
+
+        if (!cancelled && memberData && memberData.length > 0) {
+          const convIds = memberData.map((m: any) => m.conversation_id);
+
+          const { data: convData } = await supabase
+            .from('conversations')
+            .select('*')
+            .in('id', convIds);
+
+          const { data: msgData } = await supabase
+            .from('messages')
+            .select('*, profiles:sender_id(id, first_name, last_name, role)')
+            .in('conversation_id', convIds)
+            .order('created_at', { ascending: true });
+
+          if (!cancelled && msgData && msgData.length > 0) {
+            const mappedMessages: Message[] = msgData.map((m: any) => {
+              const senderProfile = m.profiles;
+              return {
+                id: m.id,
+                conversationId: m.conversation_id,
+                senderId: m.sender_id,
+                senderName: senderProfile ? `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() : 'Unknown',
+                senderRole: (senderProfile?.role || 'parent') as UserRole,
+                text: m.text,
+                timestamp: m.created_at,
+                read: false,
+                isUrgent: m.is_urgent,
+                attachments: m.attachments || [],
+              };
+            });
+            setMessages(mappedMessages);
+          }
+
+          if (!cancelled && convData && convData.length > 0) {
+            const allMsgs = msgData || [];
+            const mappedConversations: Conversation[] = convData.map((c: any) => {
+              const convMsgs = allMsgs.filter((m: any) => m.conversation_id === c.id);
+              const lastMsg = convMsgs[convMsgs.length - 1];
+              const senderProfile = lastMsg?.profiles;
+              return {
+                id: c.id,
+                participants: [],
+                type: c.type || 'direct',
+                title: c.title || undefined,
+                lastMessage: lastMsg ? {
+                  id: lastMsg.id,
+                  conversationId: lastMsg.conversation_id,
+                  senderId: lastMsg.sender_id,
+                  senderName: senderProfile ? `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() : 'Unknown',
+                  senderRole: (senderProfile?.role || 'parent') as UserRole,
+                  text: lastMsg.text,
+                  timestamp: lastMsg.created_at,
+                  read: false,
+                  isUrgent: lastMsg.is_urgent,
+                } : {
+                  id: '', conversationId: c.id, senderId: '', senderName: '', senderRole: 'parent' as UserRole,
+                  text: '', timestamp: c.created_at, read: true,
+                },
+                unreadCount: 0,
+              };
+            });
+            setConversations(mappedConversations);
+          }
+        }
+
+        // ── Fetch invoices (parent role only) ──
+        if (role === 'parent') {
+          const { data: invoiceData } = await supabase
+            .from('invoices')
+            .select('*')
+            .eq('parent_id', profile.id);
+
+          if (!cancelled && invoiceData && invoiceData.length > 0) {
+            const mappedInvoices: Invoice[] = invoiceData.map((inv: any) => ({
+              id: inv.id,
+              childId: inv.child_id,
+              description: inv.description,
+              amount: inv.amount_cents / 100,
+              dueDate: inv.due_date,
+              paidDate: inv.paid_at || undefined,
+              status: inv.status as Invoice['status'],
+              items: Array.isArray(inv.line_items) ? inv.line_items : [],
+            }));
+            setInvoices(mappedInvoices);
+          }
+        }
+
+        // ── Fetch attendance for today ──
+        const today = new Date().toISOString().split('T')[0];
+        const { data: attendanceData } = await supabase
+          .from('attendance')
+          .select('*, children(first_name, last_name)')
+          .in('child_id', childIds)
+          .eq('date', today);
+
+        if (!cancelled && attendanceData && attendanceData.length > 0) {
+          const mappedAttendance: AttendanceRecord[] = attendanceData.map((a: any) => ({
+            childId: a.child_id,
+            childName: a.children ? `${a.children.first_name} ${a.children.last_name}` : '',
+            date: a.date,
+            checkInTime: a.check_in_at || undefined,
+            checkOutTime: a.check_out_at || undefined,
+            status: a.status,
+            note: a.notes || undefined,
+          }));
+          setAttendance(mappedAttendance);
+        }
+        // TODO (#41): Fetch learning plans from Supabase when the feature is ready.
+        // The learning_plans table exists in the DB schema. Query should filter by
+        // classroom_id (for caregivers) or by the child's classroom (for parents).
+        // Until then, the GalleryScreen and ProfileScreen use sample data from sampleData.ts.
+
+      } catch (err) {
+        console.error('[AppContext] Error fetching Supabase data:', err);
+        // On error, keep sample data as fallback
+      }
+    };
+
+    fetchSupabaseData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.profile, auth.isDemoMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Real-time subscription for timeline_entries (fixes #17) ──
+  useEffect(() => {
+    if (auth.isDemoMode || !auth.profile) return;
+
+    let channel: RealtimeChannel | null = null;
+
+    channel = supabase
+      .channel('timeline-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'timeline_entries' },
+        (payload) => {
+          const te = payload.new as any;
+          const newEntry: TimelineEntry = {
+            id: te.id,
+            childId: te.child_id,
+            type: te.activity_type,
+            timestamp: te.created_at,
+            createdBy: {
+              id: te.author_id,
+              name: 'Staff',
+              role: 'caregiver',
+              email: '',
+            },
+            title: te.title,
+            description: te.description || undefined,
+            details: te.metadata && typeof te.metadata === 'object' ? te.metadata as Record<string, any> : undefined,
+            photos: te.photo_urls || [],
+            mood: te.mood || undefined,
+            isUrgent: te.is_urgent,
+            reactions: [],
+            comments: [],
+          };
+          setTimelineEntries((prev) => [newEntry, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [auth.profile, auth.isDemoMode]);
+
+  // ── Reset state when user logs out (fixes #29) ──
+  useEffect(() => {
+    if (!auth.isAuthenticated) {
+      // Reset all state back to sample data defaults
+      setFetchedChildren([]);
+      setSupabaseDataLoaded(false);
+      setTimelineEntries(initialTimeline);
+      setMessages(initialMessages);
+      setConversations(initialConversations);
+      setNotifications(initialNotifications);
+      setIncidents(initialIncidents);
+      setAttendance(initialAttendance);
+      setInvoices(initialInvoices);
+      setIsCheckedIn(true);
+      setSelectedChildId('child1');
+      setActiveConversationId(null);
+    }
+  }, [auth.isAuthenticated]);
+
+  // Use fetched children when Supabase data is available, otherwise fall back to sample data
+  const allChildren = supabaseDataLoaded && fetchedChildren.length > 0
+    ? fetchedChildren
+    : (currentRole === 'parent' ? [layla, adam] : classroomChildren);
+  const selectedChild = allChildren.find((c) => c.id === selectedChildId) || allChildren[0] || layla;
 
   const login = useCallback((role: UserRole) => {
     setCurrentRole(role === 'caregiver' ? 'caregiver' : 'parent');

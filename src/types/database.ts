@@ -769,6 +769,10 @@ export interface Database {
         Args: Record<string, never>;
         Returns: string | null;
       };
+      join_demo_daycare: {
+        Args: Record<string, never>;
+        Returns: { error?: string; daycare_id?: string };
+      };
     };
 
     Enums: Record<string, never>;

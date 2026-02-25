@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
+import { trackScreen } from '../../lib/analytics';
 import { learningPlans as samplePlans, sampleIncidents } from '../../data/sampleData';
 
 type SubScreen = null | 'child_profile' | 'family' | 'pickups' | 'health' | 'invoices' | 'invoice_detail' | 'notifications' | 'about'
@@ -26,12 +31,20 @@ interface MenuSection {
 export const ProfileScreen = () => {
   const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout } = useApp();
   const { isDark, toggleTheme } = useTheme();
+  const auth = useAuth();
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [smartNotifs, setSmartNotifs] = useState(true);
   const [biometric, setBiometric] = useState(true);
   const [offlineMode, setOfflineMode] = useState(true);
   const [paymentCard] = useState({ type: 'Visa', last4: '4242' });
+
+  // Track screen view on mount (#34)
+  useEffect(() => {
+    trackScreen('Profile');
+  }, []);
 
   // Notification toggle states
   const [mealNotifs, setMealNotifs] = useState(true);
@@ -566,7 +579,7 @@ export const ProfileScreen = () => {
         return (
           <View>
             <Text style={styles.subTitle}>Download My Data</Text>
-            <Text style={styles.subDesc}>Select the data you want to download. A zip file will be prepared for you.</Text>
+            <Text style={styles.subDesc}>Export all your data or permanently delete your account.</Text>
             {[
               { label: 'Timeline Entries', desc: 'All activities, meals, naps, and milestones', value: downloadTimeline, onToggle: setDownloadTimeline },
               { label: 'Photos', desc: 'All photos shared by caregivers', value: downloadPhotos, onToggle: setDownloadPhotos },
@@ -584,19 +597,105 @@ export const ProfileScreen = () => {
               </View>
             ))}
             <TouchableOpacity
-              style={[styles.saveButton, { marginTop: Spacing.lg }]}
-              onPress={() => {
-                const categories = [downloadTimeline && 'timeline', downloadPhotos && 'photos', downloadMessages && 'messages', downloadReports && 'reports'].filter(Boolean);
-                if (categories.length === 0) {
-                  showAlert('No Data Selected', 'Please select at least one category to download.');
-                  return;
+              style={[styles.saveButton, { marginTop: Spacing.lg }, isExporting && styles.saveButtonDisabled]}
+              disabled={isExporting}
+              onPress={async () => {
+                try {
+                  setIsExporting(true);
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (!session?.access_token) {
+                    showAlert('Not Authenticated', 'Please sign in again to export your data.');
+                    return;
+                  }
+                  const { data, error } = await supabase.functions.invoke('data-export', {
+                    headers: { Authorization: 'Bearer ' + session.access_token },
+                  });
+                  if (error) {
+                    showAlert('Export Failed', error.message || 'An error occurred while exporting your data.');
+                    return;
+                  }
+                  const jsonString = JSON.stringify(data, null, 2);
+                  const exportFile = new File(Paths.cache, 'littlejourney-data-export.json');
+                  exportFile.write(jsonString);
+                  const fileUri = exportFile.uri;
+                  const sharingAvailable = await Sharing.isAvailableAsync();
+                  if (sharingAvailable) {
+                    await Sharing.shareAsync(fileUri, {
+                      mimeType: 'application/json',
+                      dialogTitle: 'Export My Data',
+                    });
+                  } else {
+                    showAlert('Export Complete', 'Your data has been exported. Sharing is not available on this device.');
+                  }
+                } catch (err: any) {
+                  showAlert('Export Error', err.message || 'Something went wrong during data export.');
+                } finally {
+                  setIsExporting(false);
                 }
-                showAlert('Download Requested', `Your data package (${categories.join(', ')}) is being prepared. You will receive a notification when it is ready.`);
               }}
             >
-              <Ionicons name="cloud-download-outline" size={18} color={Colors.white} />
-              <Text style={styles.saveButtonText}>Request Download</Text>
+              {isExporting ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <Ionicons name="cloud-download-outline" size={18} color={Colors.white} />
+              )}
+              <Text style={styles.saveButtonText}>{isExporting ? 'Exporting...' : 'Download My Data'}</Text>
             </TouchableOpacity>
+
+            {/* Danger Zone: Delete Account */}
+            <View style={styles.dangerZone}>
+              <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+              <Text style={styles.dangerZoneDesc}>
+                Permanently delete your account and all associated data. This action cannot be undone.
+              </Text>
+              <TouchableOpacity
+                style={[styles.deleteButton, isDeleting && styles.saveButtonDisabled]}
+                disabled={isDeleting}
+                onPress={() => {
+                  Alert.alert(
+                    'Delete My Account',
+                    'Are you sure you want to permanently delete your account? All your data will be erased and cannot be recovered.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete Permanently',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            setIsDeleting(true);
+                            const { data: { session } } = await supabase.auth.getSession();
+                            if (!session?.access_token) {
+                              showAlert('Not Authenticated', 'Please sign in again to delete your account.');
+                              return;
+                            }
+                            const { error } = await supabase.functions.invoke('data-deletion', {
+                              body: { confirmation: 'DELETE_MY_ACCOUNT' },
+                              headers: { Authorization: 'Bearer ' + session.access_token },
+                            });
+                            if (error) {
+                              showAlert('Deletion Failed', error.message || 'An error occurred while deleting your account.');
+                              return;
+                            }
+                            await auth.signOut();
+                          } catch (err: any) {
+                            showAlert('Deletion Error', err.message || 'Something went wrong during account deletion.');
+                          } finally {
+                            setIsDeleting(false);
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <Ionicons name="trash-outline" size={18} color={Colors.white} />
+                )}
+                <Text style={styles.deleteButtonText}>{isDeleting ? 'Deleting...' : 'Delete My Account'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         );
       case 'payment_methods':
@@ -636,7 +735,7 @@ export const ProfileScreen = () => {
                     <Text style={styles.lessonPlanWeek}>{plan.week}</Text>
                   </View>
                   <Text style={styles.formLabel}>Goals</Text>
-                  {plan.goals.map((goal, i) => (
+                  {(plan.goals ?? []).map((goal, i) => (
                     <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 4 }}>
                       <Ionicons name="star" size={14} color={Colors.secondary} />
                       <Text style={{ fontSize: FontSizes.md, color: Colors.textSecondary }}>{goal}</Text>
@@ -1073,4 +1172,10 @@ const styles = StyleSheet.create({
   incidentDesc: { fontSize: FontSizes.md, color: Colors.textSecondary, lineHeight: 22 },
   incidentMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.sm, paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.borderLight },
   incidentMetaText: { fontSize: FontSizes.xs, color: Colors.textMuted },
+  // Danger zone / delete account
+  dangerZone: { marginTop: Spacing.xl, paddingTop: Spacing.lg, borderTopWidth: 1, borderTopColor: Colors.dangerLight },
+  dangerZoneTitle: { fontSize: FontSizes.lg, fontWeight: '700', color: Colors.danger, marginBottom: Spacing.xs },
+  dangerZoneDesc: { fontSize: FontSizes.sm, color: Colors.textMuted, marginBottom: Spacing.md, lineHeight: 20 },
+  deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, backgroundColor: Colors.danger, borderRadius: BorderRadius.lg, paddingVertical: Spacing.md },
+  deleteButtonText: { fontSize: FontSizes.md, fontWeight: '700', color: Colors.white },
 });

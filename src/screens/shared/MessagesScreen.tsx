@@ -7,15 +7,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
+import { MessagesSkeleton } from '../../components/LoadingSkeleton';
 import { formatTime, getRelativeTime } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
+import { trackScreen, trackEvent, AnalyticsEvents } from '../../lib/analytics';
 import { Message, Conversation } from '../../types';
 
 export const MessagesScreen = () => {
   const {
     currentRole, currentUser, messages, conversations, sendMessage,
     markMessagesRead, activeConversationId, setActiveConversation,
-    selectedChild, showAlert,
+    selectedChild, showAlert, isLoading,
   } = useApp();
   const [inputText, setInputText] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
@@ -24,6 +26,11 @@ export const MessagesScreen = () => {
   const [callModal, setCallModal] = useState<null | 'voice' | 'video'>(null);
   const [callTimer, setCallTimer] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Track screen view on mount (#34)
+  useEffect(() => {
+    trackScreen('Messages');
+  }, []);
 
   // Mark messages read when viewing a conversation
   useEffect(() => {
@@ -57,6 +64,7 @@ export const MessagesScreen = () => {
   const handleSend = () => {
     if (!inputText.trim() || !activeConversationId) return;
     sendMessage(inputText.trim(), isUrgent, activeConversationId);
+    trackEvent(AnalyticsEvents.MESSAGE_SENT, { urgent: isUrgent });
     setInputText('');
     setIsUrgent(false);
   };
@@ -133,6 +141,15 @@ export const MessagesScreen = () => {
       (m) => m.conversationId === conv.id && !m.read && m.senderId !== currentUser.id
     ).length;
   };
+
+  // Show skeleton while data is loading (#35)
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <MessagesSkeleton />
+      </View>
+    );
+  }
 
   // ── Conversation List View ──
   if (!activeConversationId) {

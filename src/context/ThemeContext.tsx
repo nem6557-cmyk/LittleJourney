@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect } from 'react';
+import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LightColors, DarkColors, Shadows, DarkShadows } from '../theme/colors';
 
@@ -27,8 +28,8 @@ const THEME_STORAGE_KEY = 'littlejourney_theme';
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [mode, setModeState] = useState<ThemeMode>('light');
 
-  // For now, 'system' defaults to light (would use Appearance API in production)
-  const isDark = mode === 'dark';
+  const systemColorScheme = useColorScheme();
+  const isDark = mode === 'dark' || (mode === 'system' && systemColorScheme === 'dark');
   const colors = isDark ? DarkColors : LightColors;
   const shadows = isDark ? DarkShadows : Shadows;
 

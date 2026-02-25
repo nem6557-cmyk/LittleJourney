@@ -1,14 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, TextInput, Modal,
+  RefreshControl, TextInput, Modal, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { TimelineCard } from '../../components/TimelineCard';
+import { TimelineSkeleton } from '../../components/LoadingSkeleton';
 import { getChildAge, getMoodEmoji } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
+import { trackScreen } from '../../lib/analytics';
 import { ActivityType } from '../../types';
 
 const getGreetingTime = (): string => {
@@ -31,8 +34,9 @@ const filterOptions: { label: string; type: ActivityType | 'all' }[] = [
 export const TimelineScreen = () => {
   const {
     currentRole, currentUser, selectedChild, children, selectChild,
-    timelineEntries, todayStats, showAlert,
+    timelineEntries, addTimelineEntry, todayStats, showAlert,
     notifications, unreadNotificationCount, markNotificationRead, markAllNotificationsRead,
+    isLoading,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -40,6 +44,20 @@ export const TimelineScreen = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifDisplayCount, setNotifDisplayCount] = useState(8);
   const [showAllNotifications, setShowAllNotifications] = useState(false);
+
+  // Track screen view on mount (#34)
+  useEffect(() => {
+    trackScreen('Timeline');
+  }, []);
+
+  // Show skeleton while data is loading (#35)
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <TimelineSkeleton />
+      </View>
+    );
+  }
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -91,6 +109,61 @@ export const TimelineScreen = () => {
     );
     return withDesc?.description || `${selectedChild.firstName} is having a great day!`;
   }, [timelineEntries, selectedChild]);
+
+  const handleAddPhoto = () => {
+    Alert.alert('Add Photos', 'Choose a source', [
+      {
+        text: 'Take Photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            showAlert('Permission Needed', 'Camera access is required to take photos.');
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: 'images',
+            quality: 0.8,
+          });
+          if (!result.canceled && result.assets.length > 0) {
+            const photoUris = result.assets.map((a) => a.uri);
+            addTimelineEntry({
+              childId: selectedChild.id,
+              type: 'photo',
+              title: `Photo of ${selectedChild.firstName}`,
+              description: `Captured by ${currentUser.name}`,
+              photos: photoUris,
+            });
+          }
+        },
+      },
+      {
+        text: 'Choose from Library',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            showAlert('Permission Needed', 'Photo library access is required to select photos.');
+            return;
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: 'images',
+            quality: 0.8,
+            allowsMultipleSelection: true,
+          });
+          if (!result.canceled && result.assets.length > 0) {
+            const photoUris = result.assets.map((a) => a.uri);
+            addTimelineEntry({
+              childId: selectedChild.id,
+              type: 'photo',
+              title: `${photoUris.length} Photo${photoUris.length > 1 ? 's' : ''} of ${selectedChild.firstName}`,
+              description: `Added by ${currentUser.name}`,
+              photos: photoUris,
+            });
+          }
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
@@ -401,6 +474,18 @@ export const TimelineScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Floating Action Button — visible for caregivers and admins only */}
+      {(currentRole === 'caregiver' || currentRole === 'admin') && (
+        <TouchableOpacity
+          style={[styles.fab, Shadows.large]}
+          onPress={handleAddPhoto}
+          accessibilityLabel="Add photos"
+          accessibilityRole="button"
+        >
+          <Ionicons name="camera" size={28} color={Colors.white} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -503,4 +588,17 @@ const styles = StyleSheet.create({
   childSelectorAvatarText: { fontSize: FontSizes.sm, fontWeight: '700', color: Colors.primary },
   childSelectorName: { fontSize: FontSizes.sm, fontWeight: '600', color: Colors.textPrimary, marginLeft: Spacing.sm },
   childSelectorNameActive: { color: Colors.white },
+
+  // Floating Action Button
+  fab: {
+    position: 'absolute',
+    bottom: 32,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

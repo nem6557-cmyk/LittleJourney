@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
+import { config } from '../../lib/config';
 
 interface ConsentScreenProps {
   parentName: string;
@@ -141,7 +142,7 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({
       </TouchableOpacity>
 
       <Text style={styles.footer}>
-        For questions about this consent or our privacy practices, contact us at privacy@littlejourney.app
+        For questions about this consent or our privacy practices, contact us at {config.privacyEmail}
       </Text>
 
       <View style={{ height: 40 }} />

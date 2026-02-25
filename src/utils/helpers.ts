@@ -20,6 +20,7 @@ export const formatDate = (dateString: string): string => {
 
 export const formatDateShort = (dateString: string): string => {
   const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -30,6 +31,7 @@ export const getRelativeTime = (isoString: string): string => {
   const now = new Date();
   const date = new Date(isoString);
   const diffMs = now.getTime() - date.getTime();
+  if (diffMs < 0) return 'Just now';
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
 
@@ -88,7 +90,9 @@ export const getMoodEmoji = (mood?: string): string => {
 
 export const getChildAge = (dob: string): string => {
   const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return 'Unknown';
   const now = new Date();
+  if (birth.getTime() > now.getTime()) return 'Not born yet';
   const months =
     (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth());
   const years = Math.floor(months / 12);

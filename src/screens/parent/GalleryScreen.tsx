@@ -547,7 +547,7 @@ export const GalleryScreen = () => {
                   </View>
 
                   <Text style={styles.planSubtitle}>Goals</Text>
-                  {plan.goals.map((goal, i) => (
+                  {(plan.goals ?? []).map((goal, i) => (
                     <View key={i} style={styles.goalItem}>
                       <Ionicons name="flag" size={14} color={Colors.primary} />
                       <Text style={styles.goalText}>{goal}</Text>

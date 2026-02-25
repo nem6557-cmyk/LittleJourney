@@ -31,6 +31,12 @@ export const forgotPasswordSchema = z.object({
 });
 
 // ============================================================
+// Valid US State Codes
+// ============================================================
+
+const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC','PR','GU','VI','AS','MP'];
+
+// ============================================================
 // Daycare Onboarding Validators
 // ============================================================
 
@@ -38,9 +44,9 @@ export const daycareOnboardingSchema = z.object({
   name: z.string().min(2, 'Daycare name is required').max(100),
   address: z.string().min(5, 'Address is required').max(200),
   city: z.string().min(2, 'City is required').max(100),
-  state: z.string().length(2, 'Use 2-letter state code'),
+  state: z.string().length(2, 'Use 2-letter state code').refine(val => US_STATES.includes(val.toUpperCase()), { message: 'Invalid US state code' }),
   zip: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid ZIP code'),
-  phone: z.string().regex(/^\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}$/, 'Invalid phone number'),
+  phone: z.string().regex(/^\+?[0-9\s\-().]{7,20}$/, 'Invalid phone number'),
   email: z.string().email('Invalid email'),
 });
 
@@ -115,7 +121,7 @@ export const incidentSchema = z.object({
 export const profileUpdateSchema = z.object({
   firstName: z.string().min(1).max(50).optional(),
   lastName: z.string().min(1).max(50).optional(),
-  phone: z.string().regex(/^\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}$/, 'Invalid phone number').optional().or(z.literal('')),
+  phone: z.string().regex(/^\+?[0-9\s\-().]{7,20}$/, 'Invalid phone number').optional().or(z.literal('')),
 });
 
 // ============================================================

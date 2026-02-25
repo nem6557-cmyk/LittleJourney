@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { daycareOnboardingSchema, classroomSchema } from '../../lib/validators';
 
 export const DaycareOnboardingScreen: React.FC = () => {
@@ -66,10 +67,32 @@ export const DaycareOnboardingScreen: React.FC = () => {
   };
 
   const handleFinish = async () => {
-    await refreshProfile();
-    setStep(3);
-    // The AppNavigator will automatically switch to the main app
-    // once the profile has a daycare_id
+    setIsLoading(true);
+    try {
+      const roomsToInsert = classrooms.filter((room) => room.name.trim() !== '');
+
+      for (const room of roomsToInsert) {
+        const { error } = await supabase.from('classrooms').insert({
+          daycare_id: daycareId,
+          name: room.name.trim(),
+          age_group: room.ageGroup.trim() || null,
+          capacity: 20,
+        });
+
+        if (error) {
+          Alert.alert('Error', `Failed to create classroom "${room.name}": ${error.message}`);
+        }
+      }
+
+      await refreshProfile();
+      setStep(3);
+      // The AppNavigator will automatically switch to the main app
+      // once the profile has a daycare_id
+    } catch {
+      Alert.alert('Error', 'Something went wrong while saving classrooms. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const addClassroom = () => {

@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView, Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSizes, BorderRadius } from '../../theme/colors';
+import { config } from '../../lib/config';
 
 interface PrivacyPolicyScreenProps {
   onClose?: () => void;
@@ -61,7 +62,7 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ onClos
 
       <Text style={styles.sectionTitle}>9. Contact Us</Text>
       <Text style={styles.body}>
-        For privacy inquiries, contact us at privacy@littlejourney.app
+        For privacy inquiries, contact us at {config.privacyEmail}
       </Text>
 
       <View style={{ height: 40 }} />
