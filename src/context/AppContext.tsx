@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, ReactNode } from 'react';
-import { Alert, Share } from 'react-native';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef, ReactNode } from 'react';
+import { Alert, Share, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   UserRole, User, TimelineEntry, Message, Child, MoodType, Conversation,
   Notification, IncidentReport, AttendanceRecord, Invoice, Comment, Reaction,
-  LearningPlan,
+  LearningPlan, Milestone, CalendarEvent,
 } from '../types';
 import {
   parentUser, caregiverUser, layla, adam,
@@ -12,6 +12,12 @@ import {
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { timelineService } from '../services/timeline.service';
+import { messagesService } from '../services/messages.service';
+import { incidentsService } from '../services/incidents.service';
+import { milestonesService } from '../services/milestones.service';
+import { calendarService } from '../services/calendar.service';
+import { registerForPushNotifications } from '../lib/notifications';
 
 interface AppContextType {
   // Auth / role
@@ -83,6 +89,10 @@ interface AppContextType {
   // Learning Plans
   learningPlans: LearningPlan[];
 
+  // Milestones & Calendar
+  milestones: Milestone[];
+  calendarEvents: CalendarEvent[];
+
   // Utility
   showAlert: (title: string, message: string) => void;
   shareContent: (message: string) => void;
@@ -121,8 +131,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [learningPlans, setLearningPlans] = useState<LearningPlan[]>([]);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [fetchedChildren, setFetchedChildren] = useState<Child[]>([]);
+  const pushRegistered = useRef(false);
   const [supabaseDataLoaded, setSupabaseDataLoaded] = useState(false);
 
   // Sync role from AuthContext when profile is available
@@ -387,6 +400,60 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
+        // ── Fetch milestones for each child ──
+        if (childIds.length > 0) {
+          const { data: msData } = await supabase
+            .from('milestones')
+            .select('*')
+            .in('child_id', childIds)
+            .order('created_at', { ascending: false });
+
+          if (!cancelled && msData && msData.length > 0) {
+            const mappedMilestones: Milestone[] = msData.map((m: any) => ({
+              id: m.id,
+              childId: m.child_id,
+              category: m.category || 'cognitive',
+              title: m.title,
+              description: m.description || undefined,
+              ageRange: m.age_range || '',
+              achievedDate: m.achieved_at || undefined,
+              notedBy: m.noted_by || undefined,
+            }));
+            setMilestones(mappedMilestones);
+          }
+        }
+
+        // ── Fetch calendar events for the daycare ──
+        if (profile.daycare_id) {
+          const { data: evData } = await supabase
+            .from('calendar_events')
+            .select('*')
+            .eq('daycare_id', profile.daycare_id)
+            .order('start_at', { ascending: true });
+
+          if (!cancelled && evData && evData.length > 0) {
+            const mappedEvents: CalendarEvent[] = evData.map((e: any) => ({
+              id: e.id,
+              daycareId: e.daycare_id,
+              title: e.title,
+              description: e.description || undefined,
+              date: (e.start_at || '').split('T')[0],
+              time: e.start_at ? new Date(e.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+              type: e.event_type || 'event',
+              location: e.location || undefined,
+            }));
+            setCalendarEvents(mappedEvents);
+          }
+        }
+
+        // ── Register push notification token (once per session) ──
+        if (!pushRegistered.current && Platform.OS !== 'web') {
+          pushRegistered.current = true;
+          registerForPushNotifications(profile.id).catch((err) => {
+            console.warn('[AppContext] Push registration failed:', err);
+          });
+        }
+
       } catch (err) {
         console.error('[AppContext] Error fetching Supabase data:', err);
         // On error, keep sample data as fallback
@@ -459,7 +526,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setAttendance([]);
       setInvoices([]);
       setLearningPlans([]);
+      setMilestones([]);
+      setCalendarEvents([]);
       setIsCheckedIn(true);
+      pushRegistered.current = false;
       setSelectedChildId('child1');
       setActiveConversationId(null);
     }
@@ -521,24 +591,47 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // ── Add timeline entry ──
   const addTimelineEntry = useCallback(
     (entry: Omit<TimelineEntry, 'id' | 'timestamp' | 'createdBy'>) => {
+      const tempId = `t${Date.now()}`;
       const newEntry: TimelineEntry = {
         ...entry,
-        id: `t${Date.now()}`,
+        id: tempId,
         timestamp: new Date().toISOString(),
         createdBy: currentUser,
         reactions: [],
         comments: [],
       };
-      setTimelineEntries((prev) => [...prev, newEntry]);
+      setTimelineEntries((prev) => [newEntry, ...prev]);
+
+      // Persist to Supabase in the background
+      if (auth.profile && auth.profile.daycare_id) {
+        timelineService.addEntry({
+          child_id: entry.childId,
+          author_id: auth.profile.id,
+          daycare_id: auth.profile.daycare_id,
+          activity_type: entry.type as any,
+          title: entry.title,
+          description: entry.description || null,
+          photo_urls: entry.photos || [],
+          mood: (entry.mood as any) || null,
+          metadata: entry.details || {},
+          is_urgent: entry.isUrgent || false,
+        }).then((data) => {
+          // Replace temp id with real DB id
+          if (data?.id) {
+            setTimelineEntries((prev) => prev.map((e) => e.id === tempId ? { ...e, id: data.id } : e));
+          }
+        }).catch((err) => console.warn('[AppContext] Failed to persist timeline entry:', err));
+      }
     },
-    [currentUser]
+    [currentUser, auth.profile]
   );
 
   // ── Comments ──
   const addComment = useCallback(
     (entryId: string, text: string) => {
+      const tempId = `cm${Date.now()}`;
       const newComment: Comment = {
-        id: `cm${Date.now()}`,
+        id: tempId,
         entryId,
         userId: currentUser.id,
         userName: currentUser.name,
@@ -553,8 +646,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             : e
         )
       );
+
+      // Persist to Supabase
+      if (auth.profile) {
+        timelineService.addComment(entryId, auth.profile.id, text).catch((err) =>
+          console.warn('[AppContext] Failed to persist comment:', err)
+        );
+      }
     },
-    [currentUser]
+    [currentUser, auth.profile]
   );
 
   // ── Reactions ──
@@ -575,14 +675,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           };
         })
       );
+
+      // Persist to Supabase
+      if (auth.profile) {
+        timelineService.toggleReaction(entryId, auth.profile.id, emoji).catch((err) =>
+          console.warn('[AppContext] Failed to persist reaction:', err)
+        );
+      }
     },
-    [currentUser.id]
+    [currentUser.id, auth.profile]
   );
 
   // ── Delete timeline entry ──
   const deleteTimelineEntry = useCallback((entryId: string) => {
     setTimelineEntries((prev) => prev.filter((e) => e.id !== entryId));
-  }, []);
+    if (auth.profile) {
+      timelineService.deleteEntry(entryId).catch((err) =>
+        console.warn('[AppContext] Failed to delete timeline entry:', err)
+      );
+    }
+  }, [auth.profile]);
 
   // ── Update timeline entry ──
   const updateTimelineEntry = useCallback((entryId: string, updates: Partial<TimelineEntry>) => {
@@ -596,7 +708,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         e.id === entryId ? { ...e, comments: (e.comments || []).filter((c) => c.id !== commentId) } : e
       )
     );
-  }, []);
+    if (auth.profile) {
+      timelineService.deleteComment(commentId).catch((err) =>
+        console.warn('[AppContext] Failed to delete comment:', err)
+      );
+    }
+  }, [auth.profile]);
 
   // ── Add notification ──
   const addNotification = useCallback((notif: Omit<Notification, 'id' | 'timestamp'>) => {
@@ -616,8 +733,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const sendMessage = useCallback(
     (text: string, isUrgent = false, conversationId?: string) => {
       const convId = conversationId || activeConversationId || 'conv1';
+      const tempId = `m${Date.now()}`;
       const newMsg: Message = {
-        id: `m${Date.now()}`,
+        id: tempId,
         conversationId: convId,
         senderId: currentUser.id,
         senderName: currentUser.name,
@@ -634,8 +752,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           c.id === convId ? { ...c, lastMessage: newMsg } : c
         )
       );
+
+      // Persist to Supabase
+      if (auth.profile) {
+        messagesService.sendMessage({
+          conversation_id: convId,
+          sender_id: auth.profile.id,
+          text,
+          is_urgent: isUrgent,
+        }).catch((err) => console.warn('[AppContext] Failed to persist message:', err));
+      }
     },
-    [currentUser, activeConversationId]
+    [currentUser, activeConversationId, auth.profile]
   );
 
   const markMessagesRead = useCallback((conversationId?: string) => {
@@ -735,8 +863,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         },
         ...prev,
       ]);
+
+      // Persist incident to Supabase
+      if (auth.profile && auth.profile.daycare_id) {
+        incidentsService.createIncident({
+          child_id: incident.childId,
+          daycare_id: auth.profile.daycare_id,
+          reported_by: auth.profile.id,
+          type: incident.type as any,
+          severity: incident.severity as any,
+          description: incident.description,
+          location: incident.location || null,
+          action_taken: incident.actionTaken || 'See description',
+          parent_notified_at: null,
+          witness_name: null,
+        }).catch((err) => console.warn('[AppContext] Failed to persist incident:', err));
+      }
     },
-    [currentUser, addTimelineEntry]
+    [currentUser, addTimelineEntry, auth.profile]
   );
 
   // ── Attendance ──
@@ -748,14 +892,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // ── Invoices ──
   const payInvoice = useCallback((invoiceId: string) => {
+    const now = new Date().toISOString();
     setInvoices((prev) =>
       prev.map((inv) =>
         inv.id === invoiceId
-          ? { ...inv, status: 'paid' as const, paidDate: new Date().toISOString().split('T')[0] }
+          ? { ...inv, status: 'paid' as const, paidDate: now.split('T')[0] }
           : inv
       )
     );
-  }, []);
+    // Persist to Supabase
+    if (auth.profile) {
+      supabase
+        .from('invoices')
+        .update({ status: 'paid', paid_at: now })
+        .eq('id', invoiceId)
+        .then(({ error }) => {
+          if (error) console.warn('[AppContext] Failed to persist invoice payment:', error);
+        });
+    }
+  }, [auth.profile]);
 
   // ── Dynamic report generation ──
   const generateDailyNarrative = useCallback(() => {
@@ -936,6 +1091,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       attendance, updateAttendance,
       invoices, payInvoice,
       learningPlans,
+      milestones, calendarEvents,
       showAlert, shareContent,
       generateDailyNarrative, generateHighlights,
     }),
@@ -953,6 +1109,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       attendance, updateAttendance,
       invoices, payInvoice,
       learningPlans,
+      milestones, calendarEvents,
       showAlert, shareContent,
       generateDailyNarrative, generateHighlights,
     ]

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -127,8 +128,17 @@ export const SubscriptionScreen: React.FC<{ type: 'daycare' | 'parent'; onClose?
       if (response.error) throw response.error;
 
       const { url } = response.data;
-      // In production, open Stripe Checkout URL
-      Alert.alert('Redirecting to Checkout', `Opening Stripe checkout for ${planId} plan...`);
+      if (url) {
+        // Open Stripe Checkout URL in browser
+        const canOpen = await Linking.canOpenURL(url);
+        if (canOpen) {
+          await Linking.openURL(url);
+        } else {
+          Alert.alert('Checkout', 'Please complete your subscription at:\n' + url);
+        }
+      } else {
+        Alert.alert('Error', 'No checkout URL returned. Please try again.');
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create checkout session');
     } finally {
