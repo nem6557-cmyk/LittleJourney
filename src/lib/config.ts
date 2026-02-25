@@ -56,7 +56,7 @@ export const config = {
       free: { id: 'price_parent_free', price: 0 },
       premium: {
         id: process.env.EXPO_PUBLIC_STRIPE_PRICE_PARENT_PREMIUM || 'price_parent_premium_placeholder',
-        price: 499,
+        price: 1000,
       },
     },
   },

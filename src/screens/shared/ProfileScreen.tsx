@@ -11,7 +11,6 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { trackScreen } from '../../lib/analytics';
-import { learningPlans as samplePlans, sampleIncidents } from '../../data/sampleData';
 
 type SubScreen = null | 'child_profile' | 'family' | 'pickups' | 'health' | 'invoices' | 'invoice_detail' | 'notifications' | 'about'
   | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'lesson_plans' | 'incidents';
@@ -29,7 +28,7 @@ interface MenuSection {
 }
 
 export const ProfileScreen = () => {
-  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout } = useApp();
+  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const auth = useAuth();
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
@@ -119,7 +118,7 @@ export const ProfileScreen = () => {
         { icon: 'people-outline', label: 'Family Network', subtitle: 'Manage who can see updates', sub: 'family' },
         { icon: 'shield-checkmark-outline', label: 'Authorized Pickups', subtitle: `${selectedChild.authorizedPickups.length} authorized people`, sub: 'pickups' },
         { icon: 'medical-outline', label: 'Health & Allergies', subtitle: selectedChild.allergies.length > 0 ? selectedChild.allergies.join(', ') : 'No known allergies', sub: 'health' },
-        { icon: 'alert-circle-outline', label: 'Incident Reports', subtitle: `${sampleIncidents.length} report${sampleIncidents.length !== 1 ? 's' : ''} on file`, sub: 'incidents' },
+        { icon: 'alert-circle-outline', label: 'Incident Reports', subtitle: `${incidents.length} report${incidents.length !== 1 ? 's' : ''} on file`, sub: 'incidents' },
       ],
     },
     {
@@ -725,7 +724,7 @@ export const ProfileScreen = () => {
         return (
           <View>
             <Text style={styles.subTitle}>Lesson Plans</Text>
-            {samplePlans.map((plan) => {
+            {learningPlans.map((plan) => {
               const completed = plan.activities.filter((a) => a.completed).length;
               const total = plan.activities.length;
               return (
@@ -761,10 +760,10 @@ export const ProfileScreen = () => {
         return (
           <View>
             <Text style={styles.subTitle}>Incident Reports</Text>
-            {sampleIncidents.length === 0 ? (
+            {incidents.length === 0 ? (
               <Text style={styles.emptyText}>No incident reports on file.</Text>
             ) : (
-              sampleIncidents.map((inc) => (
+              incidents.map((inc) => (
                 <View key={inc.id} style={styles.incidentCard}>
                   <View style={styles.incidentHeader}>
                     <View style={[styles.incidentSeverity, { backgroundColor: severityColors[inc.severity] || Colors.textMuted }]}>

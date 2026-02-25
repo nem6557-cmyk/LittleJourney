@@ -16,7 +16,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.littlejourney.app",
-      "associatedDomains": ["applinks:littlejourney.app"]
+      "associatedDomains": [
+        "applinks:littlejourney.app"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -29,8 +31,15 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{ "scheme": "littlejourney" }],
-          "category": ["DEFAULT", "BROWSABLE"]
+          "data": [
+            {
+              "scheme": "littlejourney"
+            }
+          ],
+          "category": [
+            "DEFAULT",
+            "BROWSABLE"
+          ]
         }
       ]
     },

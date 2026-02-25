@@ -4,16 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   UserRole, User, TimelineEntry, Message, Child, MoodType, Conversation,
   Notification, IncidentReport, AttendanceRecord, Invoice, Comment, Reaction,
+  LearningPlan,
 } from '../types';
 import {
   parentUser, caregiverUser, layla, adam,
-  todayTimeline as initialTimeline,
-  sampleMessages as initialMessages,
-  sampleConversations as initialConversations,
-  sampleNotifications as initialNotifications,
-  sampleIncidents as initialIncidents,
-  sampleAttendance as initialAttendance,
-  sampleInvoices as initialInvoices,
 } from '../data/sampleData';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
@@ -86,6 +80,9 @@ interface AppContextType {
   invoices: Invoice[];
   payInvoice: (invoiceId: string) => void;
 
+  // Learning Plans
+  learningPlans: LearningPlan[];
+
   // Utility
   showAlert: (title: string, message: string) => void;
   shareContent: (message: string) => void;
@@ -114,15 +111,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [currentRole, setCurrentRole] = useState<UserRole>('parent');
   const [selectedChildId, setSelectedChildId] = useState('child1');
-  const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>(initialTimeline);
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
+  const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isCheckedIn, setIsCheckedIn] = useState(true);
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
-  const [incidents, setIncidents] = useState<IncidentReport[]>(initialIncidents);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(initialAttendance);
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [incidents, setIncidents] = useState<IncidentReport[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [learningPlans, setLearningPlans] = useState<LearningPlan[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [fetchedChildren, setFetchedChildren] = useState<Child[]>([]);
   const [supabaseDataLoaded, setSupabaseDataLoaded] = useState(false);
@@ -152,8 +150,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // ── Fetch real data from Supabase when authenticated (fixes #11, #28) ──
   useEffect(() => {
-    if (auth.isDemoMode || !auth.profile) {
-      // Demo mode or not logged in — use sample data
+    if (!auth.profile) {
+      // Not logged in — no data to fetch
       setSupabaseDataLoaded(false);
       return;
     }
@@ -366,10 +364,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }));
           setAttendance(mappedAttendance);
         }
-        // TODO (#41): Fetch learning plans from Supabase when the feature is ready.
-        // The learning_plans table exists in the DB schema. Query should filter by
-        // classroom_id (for caregivers) or by the child's classroom (for parents).
-        // Until then, the GalleryScreen and ProfileScreen use sample data from sampleData.ts.
+        // ── Fetch learning plans (#41) ──
+        if (profile.daycare_id) {
+          const { data: lpData } = await supabase
+            .from('learning_plans')
+            .select('*')
+            .eq('daycare_id', profile.daycare_id)
+            .order('week_start', { ascending: false })
+            .limit(20);
+
+          if (!cancelled && lpData && lpData.length > 0) {
+            const mappedPlans: LearningPlan[] = lpData.map((lp: any) => ({
+              id: lp.id,
+              classroomId: lp.classroom_id,
+              daycareId: lp.daycare_id,
+              title: lp.theme || undefined,
+              weekStart: lp.week_start,
+              activities: Array.isArray(lp.activities) ? lp.activities : [],
+              createdBy: lp.created_by,
+            }));
+            setLearningPlans(mappedPlans);
+          }
+        }
 
       } catch (err) {
         console.error('[AppContext] Error fetching Supabase data:', err);
@@ -382,11 +398,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
     };
-  }, [auth.profile, auth.isDemoMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Real-time subscription for timeline_entries (fixes #17) ──
   useEffect(() => {
-    if (auth.isDemoMode || !auth.profile) return;
+    if (!auth.profile) return;
 
     let channel: RealtimeChannel | null = null;
 
@@ -427,21 +443,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         supabase.removeChannel(channel);
       }
     };
-  }, [auth.profile, auth.isDemoMode]);
+  }, [auth.profile]);
 
   // ── Reset state when user logs out (fixes #29) ──
   useEffect(() => {
     if (!auth.isAuthenticated) {
-      // Reset all state back to sample data defaults
+      // Reset all state to empty
       setFetchedChildren([]);
       setSupabaseDataLoaded(false);
-      setTimelineEntries(initialTimeline);
-      setMessages(initialMessages);
-      setConversations(initialConversations);
-      setNotifications(initialNotifications);
-      setIncidents(initialIncidents);
-      setAttendance(initialAttendance);
-      setInvoices(initialInvoices);
+      setTimelineEntries([]);
+      setMessages([]);
+      setConversations([]);
+      setNotifications([]);
+      setIncidents([]);
+      setAttendance([]);
+      setInvoices([]);
+      setLearningPlans([]);
       setIsCheckedIn(true);
       setSelectedChildId('child1');
       setActiveConversationId(null);
@@ -918,6 +935,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       incidents, addIncident,
       attendance, updateAttendance,
       invoices, payInvoice,
+      learningPlans,
       showAlert, shareContent,
       generateDailyNarrative, generateHighlights,
     }),
@@ -934,6 +952,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       incidents, addIncident,
       attendance, updateAttendance,
       invoices, payInvoice,
+      learningPlans,
       showAlert, shareContent,
       generateDailyNarrative, generateHighlights,
     ]

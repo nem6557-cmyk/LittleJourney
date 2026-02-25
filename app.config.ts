@@ -80,16 +80,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         color: '#6C63FF',
       },
     ],
-    '@sentry/react-native',
+    ['@sentry/react-native', {
+      organization: process.env.SENTRY_ORG || 'your-sentry-org',
+      project: process.env.SENTRY_PROJECT || 'littlejourney',
+    }],
   ],
   extra: {
     eas: {
-      // TODO: Run `eas project:init` and paste the project ID here
-      projectId: process.env.EAS_PROJECT_ID || 'your-eas-project-id',
+      projectId: process.env.EAS_PROJECT_ID || '65cb7e55-095b-440f-9340-dfe489247b67',
     },
   },
   updates: {
-    url: `https://u.expo.dev/${process.env.EAS_PROJECT_ID || 'your-eas-project-id'}`,
+    url: `https://u.expo.dev/${process.env.EAS_PROJECT_ID || '65cb7e55-095b-440f-9340-dfe489247b67'}`,
   },
   runtimeVersion: {
     policy: 'appVersion',

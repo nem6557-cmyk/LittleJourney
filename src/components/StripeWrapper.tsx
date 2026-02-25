@@ -13,7 +13,7 @@ export function StripeWrapper({ children }: { children: React.ReactNode }) {
       merchantIdentifier={stripeConfig.merchantIdentifier}
       urlScheme={stripeConfig.urlScheme}
     >
-      {children}
+      {children as React.ReactElement}
     </StripeProvider>
   );
 }
