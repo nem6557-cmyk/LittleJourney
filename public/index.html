@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1.00001, viewport-fit=cover" />
+
+    <!-- PWA Meta -->
+    <meta name="theme-color" content="#6C63FF" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="LittleJourney" />
+    <meta name="application-name" content="Little Journey Daycare" />
+    <meta name="description" content="Real-time daycare updates, photos, messaging, and milestone tracking for parents." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="msapplication-TileColor" content="#6C63FF" />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+
+    <!-- Title -->
+    <title>LittleJourney</title>
+
+    <!-- Splash screen style -->
+    <style>
+      html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; }
+      body { overflow: hidden; background-color: #6C63FF; }
+      #splash { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #6C63FF; }
+      #splash-text { color: white; font-size: 24px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="splash">
+        <div style="font-size: 64px;">🦋</div>
+        <div id="splash-text">Little Journey</div>
+      </div>
+    </div>
+
+    <!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            console.log('SW registered:', reg.scope);
+          }).catch(function(err) {
+            console.log('SW registration failed:', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

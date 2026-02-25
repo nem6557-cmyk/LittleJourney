@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, Image,
@@ -6,10 +6,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
-import { milestones as sampleMilestones, calendarEvents, learningPlans as samplePlans } from '../../data/sampleData';
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
-import { Milestone, LearningPlan } from '../../types';
+import { Milestone, LearningPlan, CalendarEvent } from '../../types';
 
 type Tab = 'gallery' | 'milestones' | 'calendar' | 'learning';
 
@@ -47,16 +46,24 @@ interface PhotoEntry {
 }
 
 export const GalleryScreen = () => {
-  const { selectedChild, timelineEntries, shareContent, showAlert } = useApp();
+  const { selectedChild, timelineEntries, shareContent, showAlert, learningPlans: contextPlans } = useApp();
   const [activeTab, setActiveTab] = useState<Tab>('gallery');
-  const [milestoneData, setMilestoneData] = useState<Milestone[]>(sampleMilestones);
-  const [learningPlans, setLearningPlans] = useState<LearningPlan[]>(samplePlans);
+  const [milestoneData, setMilestoneData] = useState<Milestone[]>([]);
+  const [learningPlans, setLearningPlans] = useState<LearningPlan[]>(contextPlans);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [galleryFilter, setGalleryFilter] = useState<'all' | 'meals' | 'activities' | 'milestones' | 'other'>('all');
   const [searchGallery, setSearchGallery] = useState('');
   const [milestoneFilter, setMilestoneFilter] = useState<string | null>(null);
   const [calendarSearch, setCalendarSearch] = useState('');
+  const [calendarEvents] = useState<CalendarEvent[]>([]);
   const [favoritePhotoIds, setFavoritePhotoIds] = useState<Set<string>>(new Set());
+
+  // Sync learning plans from context when they change
+  useEffect(() => {
+    if (contextPlans.length > 0) {
+      setLearningPlans(contextPlans);
+    }
+  }, [contextPlans]);
 
   const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { key: 'gallery', label: 'Gallery', icon: 'images-outline' },

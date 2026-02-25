@@ -25,7 +25,7 @@ const onboardingSlides = [
 ];
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigateToSignUp, onNavigateToForgotPassword }) => {
-  const { signIn, demoSignIn } = useAuth();
+  const { signIn } = useAuth();
 
   const [screen, setScreen] = useState<'onboarding' | 'login'>('onboarding');
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -81,10 +81,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigateToSignUp, on
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleDemoLogin = (role: 'parent' | 'caregiver') => {
-    demoSignIn(role);
   };
 
   if (screen === 'onboarding') {
@@ -184,25 +180,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigateToSignUp, on
             </Text>
           </TouchableOpacity>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or try a demo</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Demo Buttons */}
-          <View style={styles.demoRow}>
-            <TouchableOpacity style={[styles.demoBtn, Shadows.small]} onPress={() => handleDemoLogin('parent')} accessibilityLabel="Try demo as parent" accessibilityRole="button">
-              <Text style={styles.demoBtnEmoji}>👨‍👩‍👧</Text>
-              <Text style={styles.demoBtnText}>Parent Demo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.demoBtn, Shadows.small]} onPress={() => handleDemoLogin('caregiver')} accessibilityLabel="Try demo as caregiver" accessibilityRole="button">
-              <Text style={styles.demoBtnEmoji}>👩‍🏫</Text>
-              <Text style={styles.demoBtnText}>Caregiver Demo</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Footer */}
           <View style={styles.footer}>
             <View style={styles.footerBadges}>
@@ -265,13 +242,6 @@ const styles = StyleSheet.create({
   signUpLink: { alignItems: 'center', marginTop: Spacing.lg },
   signUpLinkText: { fontSize: FontSizes.md, color: Colors.textSecondary },
   linkBold: { color: Colors.primary, fontWeight: '700' },
-  divider: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.lg, gap: Spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.borderLight },
-  dividerText: { fontSize: FontSizes.sm, color: Colors.textMuted, fontWeight: '500' },
-  demoRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
-  demoBtn: { flex: 1, alignItems: 'center', backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, gap: Spacing.sm, borderWidth: 1, borderColor: Colors.borderLight },
-  demoBtnEmoji: { fontSize: 28 },
-  demoBtnText: { fontSize: FontSizes.sm, fontWeight: '600', color: Colors.textSecondary },
   footer: { alignItems: 'center', marginTop: Spacing.xxl, paddingBottom: Spacing.lg },
   footerBadges: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.md },
   footerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.card, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs, borderRadius: BorderRadius.round, ...Shadows.small },
