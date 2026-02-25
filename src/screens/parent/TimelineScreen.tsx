@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, TextInput, Modal, Alert,
+  RefreshControl, TextInput, Modal, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,8 +11,10 @@ import { TimelineCard } from '../../components/TimelineCard';
 import { TimelineSkeleton } from '../../components/LoadingSkeleton';
 import { getChildAge, getMoodEmoji } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { trackScreen } from '../../lib/analytics';
 import { ActivityType } from '../../types';
+import { storageService } from '../../services/storage.service';
 
 const getGreetingTime = (): string => {
   const h = new Date().getHours();
@@ -44,6 +46,8 @@ export const TimelineScreen = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifDisplayCount, setNotifDisplayCount] = useState(8);
   const [showAllNotifications, setShowAllNotifications] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const { profile: authProfile } = useAuth();
 
   // Track screen view on mount (#34)
   useEffect(() => {
@@ -110,6 +114,25 @@ export const TimelineScreen = () => {
     return withDesc?.description || `${selectedChild.firstName} is having a great day!`;
   }, [timelineEntries, selectedChild]);
 
+  /**
+   * Upload photo URIs to Supabase Storage (or fall back to local URIs).
+   */
+  const uploadPhotos = async (uris: string[]): Promise<string[]> => {
+    const daycareId = authProfile?.daycare_id;
+    if (!daycareId) return uris; // No daycare → use local URIs
+    const uploaded: string[] = [];
+    for (const uri of uris) {
+      try {
+        const url = await storageService.uploadTimelinePhoto(daycareId, selectedChild.id, uri);
+        uploaded.push(url);
+      } catch (err) {
+        console.warn('[Timeline] Photo upload failed, using local URI:', err);
+        uploaded.push(uri); // Graceful fallback
+      }
+    }
+    return uploaded;
+  };
+
   const handleAddPhoto = () => {
     Alert.alert('Add Photos', 'Choose a source', [
       {
@@ -125,14 +148,20 @@ export const TimelineScreen = () => {
             quality: 0.8,
           });
           if (!result.canceled && result.assets.length > 0) {
-            const photoUris = result.assets.map((a) => a.uri);
-            addTimelineEntry({
-              childId: selectedChild.id,
-              type: 'photo',
-              title: `Photo of ${selectedChild.firstName}`,
-              description: `Captured by ${currentUser.name}`,
-              photos: photoUris,
-            });
+            setIsUploading(true);
+            try {
+              const localUris = result.assets.map((a) => a.uri);
+              const photoUrls = await uploadPhotos(localUris);
+              addTimelineEntry({
+                childId: selectedChild.id,
+                type: 'photo',
+                title: `Photo of ${selectedChild.firstName}`,
+                description: `Captured by ${currentUser.name}`,
+                photos: photoUrls,
+              });
+            } finally {
+              setIsUploading(false);
+            }
           }
         },
       },
@@ -150,14 +179,20 @@ export const TimelineScreen = () => {
             allowsMultipleSelection: true,
           });
           if (!result.canceled && result.assets.length > 0) {
-            const photoUris = result.assets.map((a) => a.uri);
-            addTimelineEntry({
-              childId: selectedChild.id,
-              type: 'photo',
-              title: `${photoUris.length} Photo${photoUris.length > 1 ? 's' : ''} of ${selectedChild.firstName}`,
-              description: `Added by ${currentUser.name}`,
-              photos: photoUris,
-            });
+            setIsUploading(true);
+            try {
+              const localUris = result.assets.map((a) => a.uri);
+              const photoUrls = await uploadPhotos(localUris);
+              addTimelineEntry({
+                childId: selectedChild.id,
+                type: 'photo',
+                title: `${photoUrls.length} Photo${photoUrls.length > 1 ? 's' : ''} of ${selectedChild.firstName}`,
+                description: `Added by ${currentUser.name}`,
+                photos: photoUrls,
+              });
+            } finally {
+              setIsUploading(false);
+            }
           }
         },
       },

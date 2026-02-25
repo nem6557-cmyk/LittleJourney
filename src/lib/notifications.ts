@@ -43,10 +43,9 @@ export async function registerForPushNotifications(userId?: string): Promise<str
   }
 
   // Get Expo push token
+  const projectId = process.env.EAS_PROJECT_ID || process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '65cb7e55-095b-440f-9340-dfe489247b67';
   const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId: config.environment === 'production'
-      ? 'your-eas-project-id'
-      : undefined,
+    projectId,
   });
 
   const token = tokenData.data;

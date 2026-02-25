@@ -46,7 +46,12 @@ interface PhotoEntry {
 }
 
 export const GalleryScreen = () => {
-  const { selectedChild, timelineEntries, shareContent, showAlert, learningPlans: contextPlans } = useApp();
+  const {
+    selectedChild, timelineEntries, shareContent, showAlert,
+    learningPlans: contextPlans,
+    milestones: contextMilestones,
+    calendarEvents: contextCalendarEvents,
+  } = useApp();
   const [activeTab, setActiveTab] = useState<Tab>('gallery');
   const [milestoneData, setMilestoneData] = useState<Milestone[]>([]);
   const [learningPlans, setLearningPlans] = useState<LearningPlan[]>(contextPlans);
@@ -55,7 +60,7 @@ export const GalleryScreen = () => {
   const [searchGallery, setSearchGallery] = useState('');
   const [milestoneFilter, setMilestoneFilter] = useState<string | null>(null);
   const [calendarSearch, setCalendarSearch] = useState('');
-  const [calendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(contextCalendarEvents);
   const [favoritePhotoIds, setFavoritePhotoIds] = useState<Set<string>>(new Set());
 
   // Sync learning plans from context when they change
@@ -64,6 +69,21 @@ export const GalleryScreen = () => {
       setLearningPlans(contextPlans);
     }
   }, [contextPlans]);
+
+  // Sync milestones from context (filtered to selected child)
+  useEffect(() => {
+    const childMilestones = contextMilestones.filter((m) => m.childId === selectedChild.id);
+    if (childMilestones.length > 0) {
+      setMilestoneData(childMilestones);
+    }
+  }, [contextMilestones, selectedChild.id]);
+
+  // Sync calendar events from context
+  useEffect(() => {
+    if (contextCalendarEvents.length > 0) {
+      setCalendarEvents(contextCalendarEvents);
+    }
+  }, [contextCalendarEvents]);
 
   const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { key: 'gallery', label: 'Gallery', icon: 'images-outline' },
