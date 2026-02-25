@@ -9,9 +9,10 @@ import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/c
 import { useAuth } from '../../context/AuthContext';
 
 export const InviteCodeScreen: React.FC = () => {
-  const { redeemInviteCode, signOut, profile } = useAuth();
+  const { redeemInviteCode, joinDemoDaycare, signOut, profile } = useAuth();
   const [code, setCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isJoiningDemo, setIsJoiningDemo] = useState(false);
   const [error, setError] = useState('');
 
   const handleRedeem = async () => {
@@ -93,6 +94,38 @@ export const InviteCodeScreen: React.FC = () => {
           </LinearGradient>
         </TouchableOpacity>
 
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <TouchableOpacity
+          style={[styles.demoBtn, isJoiningDemo && styles.btnDisabled]}
+          onPress={async () => {
+            setIsJoiningDemo(true);
+            setError('');
+            const { error: joinError } = await joinDemoDaycare();
+            if (joinError) {
+              setError(joinError);
+            }
+            setIsJoiningDemo(false);
+          }}
+          disabled={isJoiningDemo}
+          accessibilityLabel="Join demo daycare"
+          accessibilityRole="button"
+        >
+          {isJoiningDemo ? <ActivityIndicator color={Colors.primary} /> : (
+            <>
+              <Ionicons name="school-outline" size={20} color={Colors.primary} />
+              <Text style={styles.demoBtnText}>Join Demo Daycare (Pilot)</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <Text style={styles.demoHint}>
+          Try the app with Sunshine Academy, a pre-configured demo daycare with sample children and classrooms.
+        </Text>
+
         <TouchableOpacity style={styles.signOutBtn} onPress={signOut}>
           <Text style={styles.signOutText}>Sign out and use a different account</Text>
         </TouchableOpacity>
@@ -115,6 +148,12 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.7 },
   redeemBtnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, gap: Spacing.sm },
   redeemBtnText: { fontSize: FontSizes.lg, color: Colors.white, fontWeight: '700' },
+  divider: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xl },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.borderLight },
+  dividerText: { paddingHorizontal: Spacing.md, fontSize: FontSizes.sm, color: Colors.textMuted, fontWeight: '600' },
+  demoBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.lg, paddingVertical: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 2, borderColor: Colors.primary, backgroundColor: Colors.card },
+  demoBtnText: { fontSize: FontSizes.md, color: Colors.primary, fontWeight: '700' },
+  demoHint: { fontSize: FontSizes.xs, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 18 },
   signOutBtn: { alignItems: 'center', marginTop: Spacing.xl },
   signOutText: { fontSize: FontSizes.sm, color: Colors.textMuted },
 });

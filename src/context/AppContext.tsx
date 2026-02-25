@@ -15,6 +15,7 @@ import {
   sampleAttendance as initialAttendance,
   sampleInvoices as initialInvoices,
 } from '../data/sampleData';
+import { useAuth } from './AuthContext';
 
 interface AppContextType {
   // Auth / role
@@ -106,6 +107,7 @@ const classroomChildren: Child[] = [
 ];
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const auth = useAuth();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentRole, setCurrentRole] = useState<UserRole>('parent');
@@ -121,7 +123,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const currentUser = currentRole === 'parent' ? parentUser : caregiverUser;
+  // Sync role from AuthContext when profile is available
+  useEffect(() => {
+    if (auth.profile?.role) {
+      setCurrentRole(auth.profile.role as UserRole);
+    }
+  }, [auth.profile?.role]);
+
+  // Build currentUser from auth profile when available, fallback to sample data
+  const currentUser = useMemo(() => {
+    if (auth.profile) {
+      const role = (auth.profile.role || 'parent') as UserRole;
+      const base = role === 'parent' ? parentUser : caregiverUser;
+      return {
+        ...base,
+        id: auth.profile.id,
+        name: `${auth.profile.first_name || ''} ${auth.profile.last_name || ''}`.trim() || base.name,
+        email: auth.profile.email || base.email,
+        role,
+      };
+    }
+    return currentRole === 'parent' ? parentUser : caregiverUser;
+  }, [auth.profile, currentRole]);
+
   const allChildren = currentRole === 'parent' ? [layla, adam] : classroomChildren;
   const selectedChild = allChildren.find((c) => c.id === selectedChildId) || layla;
 
@@ -132,10 +156,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     AsyncStorage.setItem('littlejourney_auth', JSON.stringify({ authenticated: true, role })).catch(() => {});
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     setIsAuthenticated(false);
     AsyncStorage.removeItem('littlejourney_auth').catch(() => {});
-  }, []);
+    // Also sign out from Supabase auth
+    try {
+      await auth.signOut();
+    } catch {
+      // Supabase signOut may fail if not configured — ignore
+    }
+  }, [auth]);
 
   const switchRole = useCallback(() => {
     setCurrentRole((prev) => (prev === 'parent' ? 'caregiver' : 'parent'));

@@ -59,9 +59,9 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigateToLogin })
         Alert.alert('Sign Up Failed', error.message);
       } else {
         Alert.alert(
-          'Check Your Email',
-          'We\'ve sent a verification link to your email. Please verify your account to continue.',
-          [{ text: 'OK', onPress: onNavigateToLogin }]
+          'Account Created!',
+          'Your account has been created successfully. Please sign in to continue.',
+          [{ text: 'Sign In', onPress: onNavigateToLogin }]
         );
       }
     } catch (err) {

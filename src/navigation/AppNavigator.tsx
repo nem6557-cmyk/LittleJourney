@@ -132,7 +132,8 @@ export const AppNavigator = () => {
   const { isAuthenticated, isLoading, profile, needsOnboarding, isDemoMode } = useAuth();
 
   // Loading state while checking persisted auth
-  if (isLoading) {
+  // Also show loading if authenticated via Supabase but profile hasn't loaded yet
+  if (isLoading || (isAuthenticated && !isDemoMode && !profile)) {
     return (
       <View style={styles.loadingContainer} accessibilityLabel="Loading app" accessibilityRole="none">
         <Text style={styles.loadingLogo}>🦋</Text>

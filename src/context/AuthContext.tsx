@@ -2,8 +2,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { Alert } from 'react-native';
 import { Session, User as SupabaseUser, AuthError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { config } from '../lib/config';
 import type { Profile, Daycare } from '../types/database';
 import type { UserRole } from '../types';
+
+/**
+ * Check if Supabase is properly configured (not using placeholder values).
+ */
+const isSupabaseConfigured = (): boolean => {
+  const url = config.supabaseUrl;
+  return !!url && !url.includes('YOUR_PROJECT_ID') && !url.includes('your-') && url.startsWith('https://');
+};
 
 // ============================================================
 // Types
@@ -33,6 +42,7 @@ interface AuthContextType extends AuthState {
   // Onboarding
   createDaycare: (data: { name: string; address?: string; city?: string; state?: string; zip?: string; phone?: string; email?: string }) => Promise<{ daycareId: string; error: string | null }>;
   redeemInviteCode: (code: string) => Promise<{ error: string | null }>;
+  joinDemoDaycare: () => Promise<{ error: string | null }>;
 
   // Demo mode (for testing without Supabase)
   demoSignIn: (role: UserRole) => void;
@@ -92,15 +102,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Initialize: listen for auth state changes
   // ----------------------------------------------------------
   useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      // Supabase not configured — skip initialization, go straight to login screen
+      console.log('[Auth] Supabase not configured — running in offline mode. Use demo login or sign in/up to auto-enter demo mode.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Safety timeout: never stay on loading screen longer than 10s
+    const safetyTimer = setTimeout(() => {
+      setIsLoading((current) => {
+        if (current) {
+          console.warn('[Auth] Safety timeout — forcing loading to false');
+        }
+        return false;
+      });
+    }, 10000);
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       setSession(initialSession);
       setUser(initialSession?.user ?? null);
       if (initialSession?.user) {
-        fetchProfile(initialSession.user.id).finally(() => setIsLoading(false));
+        fetchProfile(initialSession.user.id).finally(() => {
+          clearTimeout(safetyTimer);
+          setIsLoading(false);
+        });
       } else {
+        clearTimeout(safetyTimer);
         setIsLoading(false);
       }
+    }).catch((err) => {
+      console.error('[Auth] getSession error:', err);
+      clearTimeout(safetyTimer);
+      setIsLoading(false);
     });
 
     // Listen for auth changes
@@ -118,24 +153,79 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, [fetchProfile]);
 
   // ----------------------------------------------------------
   // Auth actions
   // ----------------------------------------------------------
 
+  // Helper to activate demo mode for a given role (used by signIn/signUp when Supabase is not configured)
+  const activateDemoMode = useCallback((role: UserRole) => {
+    setIsDemoMode(true);
+    setProfile({
+      id: 'demo-user',
+      email: `demo-${role}@littlejourney.app`,
+      first_name: role === 'parent' ? 'Noor' : role === 'caregiver' ? 'Sarah' : 'Admin',
+      last_name: role === 'parent' ? 'Ahmed' : role === 'caregiver' ? 'Johnson' : 'Smith',
+      phone: null,
+      avatar_url: null,
+      role: role as any,
+      daycare_id: 'demo-daycare',
+      push_token: null,
+      coppa_consent_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    setDaycare({
+      id: 'demo-daycare',
+      name: 'Sunshine Academy',
+      address: '123 Learning Lane',
+      city: 'Austin',
+      state: 'TX',
+      zip: '78701',
+      phone: '(512) 555-0100',
+      email: 'admin@sunshineacademy.com',
+      logo_url: null,
+      stripe_account_id: null,
+      stripe_onboarding_complete: false,
+      subscription_tier: 'professional',
+      trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      max_children: 50,
+      max_classrooms: 5,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    setIsLoading(false);
+  }, []);
+
   const signIn = useCallback(async (email: string, password: string) => {
+    // When Supabase isn't configured, fall back to demo mode
+    if (!isSupabaseConfigured()) {
+      const role: UserRole = email.toLowerCase().includes('caregiver') ? 'caregiver'
+        : email.toLowerCase().includes('admin') ? 'admin'
+        : 'parent';
+      activateDemoMode(role);
+      return { error: null };
+    }
     setIsDemoMode(false);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return { error };
-  }, []);
+  }, [activateDemoMode]);
 
   const signUp = useCallback(async (
     email: string,
     password: string,
     metadata: { first_name: string; last_name: string; role: UserRole }
   ) => {
+    // When Supabase isn't configured, fall back to demo mode
+    if (!isSupabaseConfigured()) {
+      activateDemoMode(metadata.role);
+      return { error: null };
+    }
     setIsDemoMode(false);
     const { error } = await supabase.auth.signUp({
       email,
@@ -145,16 +235,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       },
     });
     return { error };
-  }, []);
+  }, [activateDemoMode]);
 
   const signOut = useCallback(async () => {
     setIsDemoMode(false);
     setProfile(null);
     setDaycare(null);
-    await supabase.auth.signOut();
+    if (isSupabaseConfigured()) {
+      await supabase.auth.signOut();
+    }
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
+    if (!isSupabaseConfigured()) {
+      Alert.alert('Offline Mode', 'Password reset is not available in offline mode. Use demo login instead.');
+      return { error: null };
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: 'littlejourney://reset-password',
     });
@@ -304,46 +400,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [user, fetchProfile]);
 
   // ----------------------------------------------------------
+  // Pilot: Join the seeded demo daycare (Sunshine Academy)
+  // ----------------------------------------------------------
+
+  const joinDemoDaycare = useCallback(async () => {
+    if (!user) return { error: 'Not authenticated' };
+
+    try {
+      // Call server-side RPC that handles all linking with SECURITY DEFINER
+      const { data, error: rpcError } = await supabase.rpc('join_demo_daycare');
+
+      if (rpcError) {
+        return { error: 'Failed to join demo daycare: ' + rpcError.message };
+      }
+
+      if (data?.error) {
+        return { error: data.error };
+      }
+
+      // Refresh profile to pick up daycare_id
+      await fetchProfile(user.id);
+
+      return { error: null };
+    } catch (err: any) {
+      return { error: err.message || 'Failed to join demo daycare' };
+    }
+  }, [user, fetchProfile]);
+
+  // ----------------------------------------------------------
   // Demo mode (bypasses Supabase for testing)
   // ----------------------------------------------------------
 
   const demoSignIn = useCallback((role: UserRole) => {
-    setIsDemoMode(true);
-    setProfile({
-      id: 'demo-user',
-      email: `demo-${role}@littlejourney.app`,
-      first_name: role === 'parent' ? 'Noor' : role === 'caregiver' ? 'Sarah' : 'Admin',
-      last_name: role === 'parent' ? 'Ahmed' : role === 'caregiver' ? 'Johnson' : 'Smith',
-      phone: null,
-      avatar_url: null,
-      role: role as any,
-      daycare_id: 'demo-daycare',
-      push_token: null,
-      coppa_consent_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-    setDaycare({
-      id: 'demo-daycare',
-      name: 'Sunshine Academy',
-      address: '123 Learning Lane',
-      city: 'Austin',
-      state: 'TX',
-      zip: '78701',
-      phone: '(512) 555-0100',
-      email: 'admin@sunshineacademy.com',
-      logo_url: null,
-      stripe_account_id: null,
-      stripe_onboarding_complete: false,
-      subscription_tier: 'professional',
-      trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      max_children: 50,
-      max_classrooms: 5,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-    setIsLoading(false);
-  }, []);
+    activateDemoMode(role);
+  }, [activateDemoMode]);
 
   // ----------------------------------------------------------
   // Context value
@@ -365,12 +455,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     refreshProfile,
     createDaycare,
     redeemInviteCode,
+    joinDemoDaycare,
     demoSignIn,
     isDemoMode,
   }), [
     session, user, profile, daycare, isLoading, isAuthenticated, needsOnboarding,
     signIn, signUp, signOut, resetPassword, updateProfile, refreshProfile,
-    createDaycare, redeemInviteCode, demoSignIn, isDemoMode,
+    createDaycare, redeemInviteCode, joinDemoDaycare, demoSignIn, isDemoMode,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
