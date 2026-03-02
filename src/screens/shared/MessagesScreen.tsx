@@ -11,6 +11,8 @@ import { MessagesSkeleton } from '../../components/LoadingSkeleton';
 import { formatTime, getRelativeTime } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
 import { trackScreen, trackEvent, AnalyticsEvents } from '../../lib/analytics';
+import { storageService } from '../../services/storage.service';
+import { useAuth } from '../../context/AuthContext';
 import { Message, Conversation } from '../../types';
 
 export const MessagesScreen = () => {
@@ -19,8 +21,10 @@ export const MessagesScreen = () => {
     markMessagesRead, activeConversationId, setActiveConversation,
     selectedChild, showAlert, isLoading,
   } = useApp();
+  const { profile: authProfile } = useAuth();
   const [inputText, setInputText] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [messageFilter, setMessageFilter] = useState<'all' | 'unread' | 'urgent'>('all');
   const [callModal, setCallModal] = useState<null | 'voice' | 'video'>(null);
@@ -388,13 +392,36 @@ export const MessagesScreen = () => {
             <TouchableOpacity
               style={styles.inputAction}
               onPress={async () => {
+                const uploadAndSendPhoto = async (uri: string) => {
+                  setIsUploadingPhoto(true);
+                  try {
+                    const daycareId = authProfile?.daycare_id;
+                    if (daycareId) {
+                      const ext = uri.split('.').pop() || 'jpg';
+                      const filename = `msg_${Date.now()}.${ext}`;
+                      const path = `${daycareId}/messages/${filename}`;
+                      const uploadedUrl = await storageService.uploadImage('timelinePhotos', path, uri);
+                      sendMessage(`[photo:${uploadedUrl}]`, false, activeConversationId || undefined);
+                    } else {
+                      // Fallback: send local URI (won't persist across devices)
+                      sendMessage(`[photo:${uri}]`, false, activeConversationId || undefined);
+                    }
+                  } catch (err: any) {
+                    console.warn('[Messages] Photo upload failed:', err);
+                    // Fallback to local URI on error
+                    sendMessage(`[photo:${uri}]`, false, activeConversationId || undefined);
+                  } finally {
+                    setIsUploadingPhoto(false);
+                  }
+                };
+
                 Alert.alert('Attach Photo', 'Choose a source', [
                   { text: 'Camera', onPress: async () => {
                     const { status } = await ImagePicker.requestCameraPermissionsAsync();
                     if (status !== 'granted') { showAlert('Permission Required', 'Camera access is needed.'); return; }
                     const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
                     if (!result.canceled && result.assets?.[0]) {
-                      sendMessage(`[photo:${result.assets[0].uri}]`, false, activeConversationId || undefined);
+                      await uploadAndSendPhoto(result.assets[0].uri);
                     }
                   }},
                   { text: 'Gallery', onPress: async () => {
@@ -402,14 +429,18 @@ export const MessagesScreen = () => {
                     if (status !== 'granted') { showAlert('Permission Required', 'Gallery access is needed.'); return; }
                     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
                     if (!result.canceled && result.assets?.[0]) {
-                      sendMessage(`[photo:${result.assets[0].uri}]`, false, activeConversationId || undefined);
+                      await uploadAndSendPhoto(result.assets[0].uri);
                     }
                   }},
                   { text: 'Cancel', style: 'cancel' },
                 ]);
               }}
             >
-              <Ionicons name="camera-outline" size={22} color={Colors.primary} />
+              {isUploadingPhoto ? (
+                <Text style={{ fontSize: 10, color: Colors.primary }}>Uploading…</Text>
+              ) : (
+                <Ionicons name="camera-outline" size={22} color={Colors.primary} />
+              )}
             </TouchableOpacity>
             <View style={styles.inputWrapper}>
               <TextInput

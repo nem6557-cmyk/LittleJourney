@@ -140,6 +140,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [fetchedChildren, setFetchedChildren] = useState<Child[]>([]);
   const pushRegistered = useRef(false);
+  const conversationIdsRef = useRef<string[]>([]);
   const [supabaseDataLoaded, setSupabaseDataLoaded] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
 
@@ -234,10 +235,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const childIds = mappedChildren.map((c) => c.id);
         if (childIds.length === 0) return;
 
-        // ── Fetch timeline entries ──
+        // ── Fetch timeline entries with comments and reactions ──
         const { data: timelineData } = await supabase
           .from('timeline_entries')
-          .select('*, profiles:author_id(id, first_name, last_name, email, role)')
+          .select('*, profiles:author_id(id, first_name, last_name, email, role), comments(*, author:profiles!author_id(id, first_name, last_name, role)), reactions(*)')
           .in('child_id', childIds)
           .order('created_at', { ascending: false })
           .limit(200);
@@ -262,8 +263,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               photos: te.photo_urls || [],
               mood: te.mood || undefined,
               isUrgent: te.is_urgent,
-              reactions: [],
-              comments: [],
+              reactions: (te.reactions || []).map((r: any) => ({
+                userId: r.user_id,
+                emoji: r.emoji,
+                timestamp: r.created_at,
+              })),
+              comments: (te.comments || []).map((c: any) => {
+                const commentAuthor = c.author;
+                return {
+                  id: c.id,
+                  entryId: te.id,
+                  userId: c.author_id,
+                  userName: commentAuthor ? `${commentAuthor.first_name || ''} ${commentAuthor.last_name || ''}`.trim() : 'Unknown',
+                  userRole: (commentAuthor?.role || 'parent') as UserRole,
+                  text: c.text,
+                  timestamp: c.created_at,
+                };
+              }),
             };
           });
           setTimelineEntries(mappedTimeline);
@@ -280,7 +296,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
           const { data: convData } = await supabase
             .from('conversations')
-            .select('*')
+            .select('*, conversation_members(user_id, profiles(id, first_name, last_name, email, role, avatar_url))')
             .in('id', convIds);
 
           const { data: msgData } = await supabase
@@ -309,6 +325,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
 
           if (!cancelled && convData && convData.length > 0) {
+            // Store conversation IDs for real-time subscriptions
+            conversationIdsRef.current = convData.map((c: any) => c.id);
+
             const allMsgs = msgData || [];
             const mappedConversations: Conversation[] = convData.map((c: any) => {
               const convMsgs = allMsgs.filter((m: any) => m.conversation_id === c.id);
@@ -316,7 +335,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               const senderProfile = lastMsg?.profiles;
               return {
                 id: c.id,
-                participants: [],
+                participants: (c.conversation_members || []).map((m: any) => ({
+                  id: m.profiles?.id || m.user_id,
+                  name: m.profiles ? `${m.profiles.first_name || ''} ${m.profiles.last_name || ''}`.trim() : 'Unknown',
+                  role: (m.profiles?.role || 'parent') as UserRole,
+                  email: m.profiles?.email || '',
+                })),
                 type: c.type || 'direct',
                 title: c.title || undefined,
                 lastMessage: lastMsg ? {
@@ -531,6 +555,76 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             comments: [],
           };
           setTimelineEntries((prev) => [newEntry, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [auth.profile]);
+
+  // ── Real-time subscription for messages ──
+  useEffect(() => {
+    if (!auth.profile) return;
+
+    let channel: RealtimeChannel | null = null;
+
+    channel = supabase
+      .channel('messages-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        async (payload) => {
+          const m = payload.new as any;
+
+          // Only process messages for conversations we're part of
+          if (!conversationIdsRef.current.includes(m.conversation_id)) return;
+
+          // Don't duplicate messages we sent ourselves (already added optimistically)
+          if (m.sender_id === auth.profile?.id) return;
+
+          // Fetch sender profile
+          let senderName = 'Unknown';
+          let senderRole: UserRole = 'parent';
+          try {
+            const { data: senderProfile } = await supabase
+              .from('profiles')
+              .select('id, first_name, last_name, role')
+              .eq('id', m.sender_id)
+              .single();
+            if (senderProfile) {
+              senderName = `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() || 'Unknown';
+              senderRole = (senderProfile.role || 'parent') as UserRole;
+            }
+          } catch {
+            // Use defaults
+          }
+
+          const newMsg: Message = {
+            id: m.id,
+            conversationId: m.conversation_id,
+            senderId: m.sender_id,
+            senderName,
+            senderRole,
+            text: m.text,
+            timestamp: m.created_at,
+            read: false,
+            isUrgent: m.is_urgent,
+            attachments: m.attachments || [],
+          };
+
+          setMessages((prev) => [...prev, newMsg]);
+          // Update conversation's last message
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === m.conversation_id
+                ? { ...c, lastMessage: newMsg, unreadCount: c.unreadCount + 1 }
+                : c
+            )
+          );
         }
       )
       .subscribe();

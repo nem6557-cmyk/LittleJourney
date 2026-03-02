@@ -610,6 +610,22 @@ export const ProfileScreen = () => {
               disabled={!currentPassword || newPassword.length < 8 || newPassword !== confirmPassword}
               onPress={async () => {
                 try {
+                  // First verify the current password by re-authenticating
+                  const userEmail = auth.profile?.email;
+                  if (!userEmail) {
+                    showAlert('Error', 'Could not determine your email address.');
+                    return;
+                  }
+                  const { error: signInError } = await supabase.auth.signInWithPassword({
+                    email: userEmail,
+                    password: currentPassword,
+                  });
+                  if (signInError) {
+                    showAlert('Error', 'Current password is incorrect.');
+                    return;
+                  }
+
+                  // Now update the password
                   const { error } = await supabase.auth.updateUser({ password: newPassword });
                   if (error) {
                     showAlert('Error', error.message || 'Failed to update password. Please try again.');
