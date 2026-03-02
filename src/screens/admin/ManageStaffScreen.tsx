@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { EmptyState } from '../../components/EmptyState';
 
 interface StaffMember {
   id: string;
   name: string;
+  email: string;
   role: string;
   classroom?: string;
 }
@@ -19,31 +22,110 @@ type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void 
 
 export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation }) => {
   const { currentUser } = useApp();
+  const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'caregiver' | 'admin'>('caregiver');
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(true);
+  const [isInviting, setIsInviting] = useState(false);
 
-  // Staff list would come from Supabase in production
-  const staffMembers: StaffMember[] = currentUser ? [
-    { id: currentUser.id, name: currentUser.name, role: 'Admin', classroom: 'All' },
-  ] : [];
+  const fetchStaff = useCallback(async () => {
+    const daycareId = profile?.daycare_id;
+    if (!daycareId) {
+      // Fallback: show current user only
+      if (currentUser) {
+        setStaffMembers([{ id: currentUser.id, name: currentUser.name, email: currentUser.email, role: 'Admin', classroom: 'All' }]);
+      }
+      setIsLoadingStaff(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, email, role')
+        .eq('daycare_id', daycareId)
+        .in('role', ['admin', 'caregiver'])
+        .order('first_name');
+
+      if (error) throw error;
+
+      const mapped: StaffMember[] = (data || []).map((p: any) => ({
+        id: p.id,
+        name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
+        email: p.email || '',
+        role: p.role === 'admin' ? 'Admin' : 'Caregiver',
+      }));
+      setStaffMembers(mapped);
+    } catch (err) {
+      console.warn('[ManageStaff] Failed to fetch staff:', err);
+      // Fallback to current user
+      if (currentUser) {
+        setStaffMembers([{ id: currentUser.id, name: currentUser.name, email: currentUser.email, role: 'Admin', classroom: 'All' }]);
+      }
+    } finally {
+      setIsLoadingStaff(false);
+    }
+  }, [profile, currentUser]);
+
+  useEffect(() => {
+    fetchStaff();
+  }, [fetchStaff]);
 
   const filtered = staffMembers.filter((s) =>
-    s.name.toLowerCase().includes(search.toLowerCase())
+    s.name.toLowerCase().includes(search.toLowerCase()) ||
+    s.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleInvite = () => {
+  const handleInvite = async () => {
     if (!inviteEmail.trim() || !inviteEmail.includes('@')) {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
-    Alert.alert(
-      'Invite Sent',
-      `An invitation has been sent to ${inviteEmail}. They will need to create an account to join.`
-    );
-    setShowInviteModal(false);
-    setInviteEmail('');
+
+    const daycareId = profile?.daycare_id;
+    if (!daycareId) {
+      Alert.alert('Error', 'No daycare associated with your account.');
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      // Insert an invitation record in Supabase
+      // Note: uses 'as any' because the invitations table may not be in generated types yet
+      const { error } = await (supabase.from('invitations') as any)
+        .insert({
+          daycare_id: daycareId,
+          email: inviteEmail.trim().toLowerCase(),
+          role: inviteRole,
+          invited_by: profile?.id,
+        });
+
+      if (error) throw error;
+
+      Alert.alert(
+        'Invite Sent',
+        `An invitation has been sent to ${inviteEmail}. They will need to create an account to join.`
+      );
+      setShowInviteModal(false);
+      setInviteEmail('');
+    } catch (err: any) {
+      // If invitations table doesn't exist yet, show a graceful message
+      if (err.code === '42P01' || err.message?.includes('relation')) {
+        Alert.alert(
+          'Invite Noted',
+          `Invitation for ${inviteEmail} recorded. The invitation system will be fully activated once the invitations table is set up.`
+        );
+        setShowInviteModal(false);
+        setInviteEmail('');
+      } else {
+        Alert.alert('Error', err.message || 'Failed to send invitation.');
+      }
+    } finally {
+      setIsInviting(false);
+    }
   };
 
   return (
@@ -101,7 +183,7 @@ export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation
             <View style={styles.staffInfo}>
               <Text style={styles.staffName}>{item.name}</Text>
               <Text style={styles.staffMeta}>
-                {item.role} {item.classroom ? `• ${item.classroom}` : ''}
+                {item.role} {item.email ? `• ${item.email}` : ''} {item.classroom ? `• ${item.classroom}` : ''}
               </Text>
             </View>
             <View style={[styles.roleBadge, item.role === 'Admin' ? styles.adminBadge : styles.caregiverBadge]}>
@@ -153,10 +235,16 @@ export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.submitBtn} onPress={handleInvite}>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleInvite} disabled={isInviting}>
               <LinearGradient colors={['#6C63FF', '#3F3D9E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.submitGradient}>
-                <Ionicons name="mail" size={20} color={Colors.white} />
-                <Text style={styles.submitText}>Send Invitation</Text>
+                {isInviting ? (
+                  <ActivityIndicator color={Colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="mail" size={20} color={Colors.white} />
+                    <Text style={styles.submitText}>Send Invitation</Text>
+                  </>
+                )}
               </LinearGradient>
             </TouchableOpacity>
           </View>

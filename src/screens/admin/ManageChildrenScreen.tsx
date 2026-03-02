@@ -1,37 +1,67 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { childrenService } from '../../services/children.service';
 import { EmptyState } from '../../components/EmptyState';
 
 type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void };
 
 export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigation }) => {
   const { children, selectedChild, selectChild } = useApp();
+  const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
   const [newClassroom, setNewClassroom] = useState('');
+  const [newDateOfBirth, setNewDateOfBirth] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
 
   const filtered = children.filter((c) =>
     `${c.firstName} ${c.lastName}`.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newFirstName.trim() || !newLastName.trim()) {
       Alert.alert('Required', 'First and last name are required.');
       return;
     }
-    Alert.alert('Coming Soon', 'Adding children will be available when connected to Supabase.');
-    setShowAddModal(false);
-    setNewFirstName('');
-    setNewLastName('');
-    setNewClassroom('');
+
+    const daycareId = profile?.daycare_id;
+    if (!daycareId) {
+      Alert.alert('Error', 'No daycare associated with your account.');
+      return;
+    }
+
+    setIsAdding(true);
+    try {
+      await childrenService.createChild({
+        first_name: newFirstName.trim(),
+        last_name: newLastName.trim(),
+        daycare_id: daycareId,
+        date_of_birth: newDateOfBirth.trim() || new Date().toISOString().split('T')[0],
+        classroom_id: null,
+        avatar_url: null,
+        medical_notes: null,
+      });
+
+      Alert.alert('Success', `${newFirstName} ${newLastName} has been enrolled.`);
+      setShowAddModal(false);
+      setNewFirstName('');
+      setNewLastName('');
+      setNewClassroom('');
+      setNewDateOfBirth('');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add child. Please try again.');
+    } finally {
+      setIsAdding(false);
+    }
   };
 
   return (
@@ -121,18 +151,32 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
               placeholder="Last name"
               placeholderTextColor={Colors.textMuted}
             />
+            <Text style={styles.fieldLabel}>Date of Birth</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={newDateOfBirth}
+              onChangeText={setNewDateOfBirth}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={Colors.textMuted}
+            />
             <Text style={styles.fieldLabel}>Classroom</Text>
             <TextInput
               style={styles.fieldInput}
               value={newClassroom}
               onChangeText={setNewClassroom}
-              placeholder="e.g. Butterfly Room"
+              placeholder="e.g. Butterfly Room (optional)"
               placeholderTextColor={Colors.textMuted}
             />
-            <TouchableOpacity style={styles.submitBtn} onPress={handleAdd}>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleAdd} disabled={isAdding}>
               <LinearGradient colors={['#6C63FF', '#3F3D9E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.submitGradient}>
-                <Ionicons name="person-add" size={20} color={Colors.white} />
-                <Text style={styles.submitText}>Add Child</Text>
+                {isAdding ? (
+                  <ActivityIndicator color={Colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="person-add" size={20} color={Colors.white} />
+                    <Text style={styles.submitText}>Add Child</Text>
+                  </>
+                )}
               </LinearGradient>
             </TouchableOpacity>
           </View>

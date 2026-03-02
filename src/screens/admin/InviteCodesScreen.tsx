@@ -206,7 +206,7 @@ export const InviteCodesScreen = ({ navigation }: { navigation?: AdminNavigation
                       onPress={() => setSelectedChildId(child.id)}
                     >
                       <Text style={[styles.childChipText, selectedChildId === child.id && styles.childChipTextActive]}>
-                        {child.first_name} {child.last_name?.[0]}.
+                        {child.firstName} {child.lastName?.[0]}.
                       </Text>
                     </TouchableOpacity>
                   ))}

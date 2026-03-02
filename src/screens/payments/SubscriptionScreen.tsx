@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
-  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
-import { config } from '../../lib/config';
+import { createCheckoutSession, getSubscriptionStatus } from '../../lib/stripe';
 
 interface PlanFeature {
   text: string;
@@ -109,35 +107,41 @@ export const SubscriptionScreen: React.FC<{ type: 'daycare' | 'parent'; onClose?
   const { profile, daycare } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<string | null>(null);
   const plans = type === 'daycare' ? daycarePlans : parentPlans;
 
-  const handleSubscribe = async (planId: string) => {
-    setIsLoading(true);
-    try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token;
+  // Fetch current subscription status on mount
+  useEffect(() => {
+    const fetchStatus = async () => {
+      const daycareId = daycare?.id || profile?.daycare_id || undefined;
+      const parentId = type === 'parent' ? profile?.id : undefined;
+      const status = await getSubscriptionStatus(
+        type === 'daycare' ? daycareId : undefined,
+        parentId
+      );
+      if (status?.plan) {
+        setCurrentPlan(status.plan);
+      }
+    };
+    fetchStatus();
+  }, [type, profile, daycare]);
 
-      const response = await supabase.functions.invoke('create-checkout', {
-        body: {
-          plan: type === 'parent' ? 'parent_premium' : planId,
-          daycareId: daycare?.id || profile?.daycare_id,
-        },
-        headers: { Authorization: `Bearer ${token}` },
+  const handleSubscribe = async (planId: string) => {
+    if (planId === 'free' || planId === currentPlan) return;
+
+    setIsLoading(true);
+    setSelectedPlan(planId);
+    try {
+      const daycareId = daycare?.id || profile?.daycare_id || '';
+      const stripePlan = type === 'parent' ? 'parent_premium' : planId as 'starter' | 'professional' | 'enterprise';
+
+      const url = await createCheckoutSession({
+        plan: stripePlan,
+        daycareId,
       });
 
-      if (response.error) throw response.error;
-
-      const { url } = response.data;
-      if (url) {
-        // Open Stripe Checkout URL in browser
-        const canOpen = await Linking.canOpenURL(url);
-        if (canOpen) {
-          await Linking.openURL(url);
-        } else {
-          Alert.alert('Checkout', 'Please complete your subscription at:\n' + url);
-        }
-      } else {
-        Alert.alert('Error', 'No checkout URL returned. Please try again.');
+      if (!url) {
+        Alert.alert('Error', 'Could not create checkout session. Please try again.');
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create checkout session');
@@ -204,14 +208,14 @@ export const SubscriptionScreen: React.FC<{ type: 'daycare' | 'parent'; onClose?
                   <ActivityIndicator color={Colors.white} />
                 ) : (
                   <Text style={styles.selectBtnTextWhite}>
-                    {type === 'daycare' ? 'Start Free Trial' : plan.id === 'free' ? 'Current Plan' : 'Upgrade Now'}
+                    {plan.id === currentPlan ? 'Current Plan' : type === 'daycare' ? 'Start Free Trial' : plan.id === 'free' ? 'Current Plan' : 'Upgrade Now'}
                   </Text>
                 )}
               </LinearGradient>
             ) : (
               <View style={styles.selectBtnFlat}>
                 <Text style={styles.selectBtnText}>
-                  {type === 'daycare' ? 'Start Free Trial' : plan.id === 'free' ? 'Current Plan' : 'Select'}
+                  {plan.id === currentPlan ? 'Current Plan' : type === 'daycare' ? 'Start Free Trial' : plan.id === 'free' ? 'Current Plan' : 'Select'}
                 </Text>
               </View>
             )}

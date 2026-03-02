@@ -1,3 +1,5 @@
+import { Linking, Platform } from 'react-native';
+import { supabase } from './supabase';
 import { config } from './config';
 
 /**
@@ -114,4 +116,81 @@ export function isParentFeatureEnabled(
 ): boolean {
   if (!plan) return false;
   return PARENT_FEATURES[plan]?.[feature] ?? false;
+}
+
+/**
+ * Create a Stripe Checkout Session via the create-checkout edge function.
+ * Opens the Stripe-hosted checkout page in the browser.
+ * Returns the session URL or null on failure.
+ */
+export async function createCheckoutSession(params: {
+  plan: 'starter' | 'professional' | 'enterprise' | 'parent_premium';
+  daycareId: string;
+  returnUrl?: string;
+}): Promise<string | null> {
+  try {
+    const defaultReturnUrl = Platform.OS === 'web'
+      ? `${window.location.origin}/payment-success`
+      : 'littlejourney://payment-success';
+
+    const { data, error } = await supabase.functions.invoke('create-checkout', {
+      body: {
+        plan: params.plan,
+        daycareId: params.daycareId,
+        returnUrl: params.returnUrl || defaultReturnUrl,
+      },
+    });
+
+    if (error) throw error;
+    if (!data?.url) throw new Error('No checkout URL returned');
+
+    // Open the Stripe Checkout page
+    if (Platform.OS === 'web') {
+      window.location.href = data.url;
+    } else {
+      await Linking.openURL(data.url);
+    }
+
+    return data.url;
+  } catch (err) {
+    console.error('[Stripe] Checkout session error:', err);
+    return null;
+  }
+}
+
+/**
+ * Get the current subscription status for a daycare or parent.
+ */
+export async function getSubscriptionStatus(daycareId?: string, parentId?: string): Promise<{
+  status: string;
+  plan: string | null;
+  trialEnd: string | null;
+} | null> {
+  try {
+    if (daycareId) {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('status, plan_tier, current_period_end')
+        .eq('daycare_id', daycareId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (error) return null;
+      return { status: data.status, plan: data.plan_tier, trialEnd: data.current_period_end };
+    }
+    if (parentId) {
+      const { data, error } = await supabase
+        .from('parent_subscriptions')
+        .select('status, plan')
+        .eq('parent_id', parentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (error) return null;
+      return { status: data.status, plan: data.plan, trialEnd: null };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

@@ -100,3 +100,29 @@ export function addNotificationResponseListener(
 export async function setBadgeCount(count: number): Promise<void> {
   await Notifications.setBadgeCountAsync(count);
 }
+
+/**
+ * Dispatch a push notification to a specific user via the send-push edge function.
+ * Called after inserting a notification record in the database.
+ */
+export async function dispatchPushNotification(record: {
+  user_id: string;
+  title: string;
+  body: string;
+  type?: string;
+  data?: Record<string, any>;
+}): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+
+    const { error } = await supabase.functions.invoke('send-push', {
+      body: { record },
+    });
+    if (error) {
+      console.warn('[Notifications] Push dispatch failed:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Notifications] Push dispatch error:', err);
+  }
+}

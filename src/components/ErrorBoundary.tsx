@@ -2,6 +2,7 @@ import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing, FontSizes, Shadows } from '../theme/colors';
+import { captureError, addBreadcrumb } from '../lib/sentry';
 
 interface Props {
   children: ReactNode;
@@ -25,6 +26,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo);
+    captureError(error, { componentStack: errorInfo.componentStack || 'unknown' });
+    addBreadcrumb('error', 'ErrorBoundary caught unhandled error', { message: error.message });
   }
 
   handleReset = () => {
@@ -98,6 +101,7 @@ export class ScreenErrorBoundary extends Component<ScreenErrorBoundaryProps, Scr
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ScreenErrorBoundary caught:', error, errorInfo);
+    captureError(error, { componentStack: errorInfo.componentStack || 'unknown', boundary: 'screen' });
   }
 
   handleReset = () => {

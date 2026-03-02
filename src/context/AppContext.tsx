@@ -17,7 +17,7 @@ import { messagesService } from '../services/messages.service';
 import { incidentsService } from '../services/incidents.service';
 import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
-import { registerForPushNotifications } from '../lib/notifications';
+import { registerForPushNotifications, dispatchPushNotification } from '../lib/notifications';
 import { onNetworkChange, processPendingMutations } from '../lib/offline';
 
 interface AppContextType {
@@ -151,19 +151,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [auth.profile?.role]);
 
-  // Build currentUser from auth profile when available, fallback to sample data
-  const currentUser = useMemo(() => {
+  // Build currentUser from auth profile when available
+  const currentUser: User = useMemo(() => {
     if (auth.profile) {
       const role = (auth.profile.role || 'parent') as UserRole;
-      const base = role === 'parent' ? parentUser : caregiverUser;
       return {
-        ...base,
         id: auth.profile.id,
-        name: `${auth.profile.first_name || ''} ${auth.profile.last_name || ''}`.trim() || base.name,
-        email: auth.profile.email || base.email,
+        name: `${auth.profile.first_name || ''} ${auth.profile.last_name || ''}`.trim() || 'User',
+        email: auth.profile.email || '',
         role,
+        phone: auth.profile.phone || '',
       };
     }
+    // Fallback for demo mode (no Supabase configured)
     return currentRole === 'parent' ? parentUser : caregiverUser;
   }, [auth.profile, currentRole]);
 
@@ -645,12 +645,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const synced = await processPendingMutations(async (mutation) => {
           const { table, operation, data } = mutation;
           if (operation === 'insert') {
-            const { error } = await supabase.from(table).insert(data as any);
+            // Remove offline-prefixed IDs before inserting
+            const insertData = { ...data };
+            if (typeof insertData.id === 'string' && insertData.id.startsWith('offline_')) {
+              delete insertData.id;
+            }
+            const { error } = await supabase.from(table).insert(insertData as any);
             if (error) throw error;
           } else if (operation === 'update') {
             const id = data.id as string;
             if (!id) throw new Error('Missing id for update');
-            const { error } = await (supabase.from(table) as any).update(data).eq('id', id);
+            const updateData = { ...data };
+            delete updateData.id; // Don't update the primary key
+            const { error } = await (supabase.from(table) as any).update(updateData).eq('id', id);
+            if (error) throw error;
+          } else if (operation === 'delete') {
+            const id = data.id as string;
+            if (!id) throw new Error('Missing id for delete');
+            const { error } = await supabase.from(table).delete().eq('id', id);
             if (error) throw error;
           }
         });
@@ -688,11 +700,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [auth.isAuthenticated]);
 
-  // Use fetched children when Supabase data is available, otherwise fall back to sample data
-  const allChildren = supabaseDataLoaded && fetchedChildren.length > 0
-    ? fetchedChildren
-    : (currentRole === 'parent' ? [layla, adam] : classroomChildren);
-  const selectedChild = allChildren.find((c) => c.id === selectedChildId) || allChildren[0] || layla;
+  // Use fetched children when Supabase data is available.
+  // Only fall back to sample data in demo mode (no auth profile = Supabase not configured).
+  const allChildren = useMemo(() => {
+    if (fetchedChildren.length > 0) return fetchedChildren;
+    if (!auth.profile) {
+      // Demo mode — show sample data
+      return currentRole === 'parent' ? [layla, adam] : classroomChildren;
+    }
+    // Supabase configured but no children yet — return empty
+    return [];
+  }, [fetchedChildren, auth.profile, currentRole]);
+
+  const emptyChild: Child = { id: '', firstName: '', lastName: '', dateOfBirth: '', classroom: '', allergies: [], emergencyContacts: [], authorizedPickups: [] };
+  const selectedChild = allChildren.find((c) => c.id === selectedChildId) || allChildren[0] || emptyChild;
 
   const login = useCallback((role: UserRole) => {
     setCurrentRole(role === 'caregiver' ? 'caregiver' : 'parent');
@@ -868,7 +889,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [auth.profile]);
 
-  // ── Add notification ──
+  // ── Add notification (persists to DB and dispatches push) ──
   const addNotification = useCallback((notif: Omit<Notification, 'id' | 'timestamp'>) => {
     const newNotif: Notification = {
       ...notif,
@@ -876,7 +897,45 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       timestamp: new Date().toISOString(),
     };
     setNotifications((prev) => [newNotif, ...prev]);
-  }, []);
+
+    // Persist and dispatch push notification
+    if (auth.profile?.daycare_id && notif.childId) {
+      // Find parents of this child to notify them
+      (async () => {
+        try {
+          const { data: parents } = await supabase
+            .from('parent_children')
+            .select('parent_id')
+            .eq('child_id', notif.childId!);
+
+          for (const p of (parents || [])) {
+            if (p.parent_id !== auth.profile?.id) {
+              // Insert notification record
+              await supabase.from('notifications').insert({
+                user_id: p.parent_id,
+                daycare_id: auth.profile!.daycare_id!,
+                type: notif.type as any,
+                title: notif.title,
+                body: notif.body,
+                data: { childId: notif.childId },
+              } as any);
+
+              // Dispatch push
+              dispatchPushNotification({
+                user_id: p.parent_id,
+                title: notif.title,
+                body: notif.body,
+                type: notif.type,
+                data: { childId: notif.childId },
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[AppContext] Failed to dispatch notification:', err);
+        }
+      })();
+    }
+  }, [auth.profile]);
 
   // ── Messages ──
   const unreadCount = useMemo(() => {
