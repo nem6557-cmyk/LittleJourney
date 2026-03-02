@@ -1,4 +1,4 @@
-const CACHE_NAME = 'littlejourney-v1';
+const CACHE_NAME = 'littlejourney-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -24,7 +24,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch — network-first for API, cache-first for static assets
+// Fetch — network-first with cache fallback for offline support
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -35,23 +35,24 @@ self.addEventListener('fetch', (event) => {
   // API / Supabase calls — always network
   if (url.pathname.startsWith('/rest/') || url.pathname.startsWith('/auth/')) return;
 
-  // Static assets — cache-first
+  // Network-first: try network, fall back to cache for offline support
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        // Cache successful responses
-        if (response.ok && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      });
-    }).catch(() => {
-      // Offline fallback — return cached index for navigation requests
-      if (request.mode === 'navigate') {
-        return caches.match('/');
+    fetch(request).then((response) => {
+      // Cache successful responses for offline use
+      if (response.ok && response.type === 'basic') {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
       }
+      return response;
+    }).catch(() => {
+      // Offline fallback — serve from cache
+      return caches.match(request).then((cached) => {
+        if (cached) return cached;
+        // Last resort for navigation — return cached index
+        if (request.mode === 'navigate') {
+          return caches.match('/');
+        }
+      });
     })
   );
 });

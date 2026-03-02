@@ -1,5 +1,6 @@
 import 'react-native-url-polyfill/auto';
 import React, { useEffect } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from './src/context/AuthContext';
 import { AppProvider } from './src/context/AppContext';
@@ -25,6 +26,20 @@ initSentry();
 function App() {
   useEffect(() => {
     trackEvent(AnalyticsEvents.APP_OPENED);
+  }, []);
+
+  // On web, the #root div is display:block by default. React Native Web's
+  // flex:1 children need a flex parent to expand. Fix the #root element so
+  // the app fills the viewport instead of collapsing to height 0.
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const root = document.getElementById('root');
+      if (root) {
+        root.style.display = 'flex';
+        root.style.flexDirection = 'column';
+        root.style.height = '100%';
+      }
+    }
   }, []);
 
   return (
