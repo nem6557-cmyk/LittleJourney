@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Modal, Alert, Platform, Image,
+  TextInput, Modal, Alert, Platform, Image, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,10 @@ import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/c
 import { formatTime, getActivityEmoji } from '../../utils/helpers';
 import { ActivityType, MoodType } from '../../types';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { storageService } from '../../services/storage.service';
+import { CaregiverSkeleton } from '../../components/LoadingSkeleton';
+import { EmptyState } from '../../components/EmptyState';
 
 const quickActions: { type: ActivityType; label: string; emoji: string; color: string }[] = [
   { type: 'meal', label: 'Meal', emoji: '🍽️', color: Colors.meal },
@@ -42,6 +46,8 @@ export const CaregiverDashboard = () => {
     timelineEntries, addTimelineEntry, isCheckedIn, toggleCheckIn,
     showAlert, attendance, updateAttendance, addIncident, addNotification,
   } = useApp();
+  const { profile: authProfile, isDemoMode } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [showLogModal, setShowLogModal] = useState(false);
   const [selectedAction, setSelectedAction] = useState<typeof quickActions[0] | null>(null);
@@ -133,68 +139,96 @@ export const CaregiverDashboard = () => {
     setShowLogModal(true);
   };
 
-  const submitLog = () => {
-    if (!selectedAction) return;
-    let title = `${selectedAction.emoji} ${selectedAction.label}`;
-    let description = logNote || undefined;
-    let details: Record<string, any> = {};
-
-    switch (selectedAction.type) {
-      case 'meal':
-        title = selectedMealType;
-        const items = mealItems.split(',').map((s) => s.trim()).filter(Boolean);
-        details = { mealType: selectedMealType.toLowerCase(), amount: selectedAmount.toLowerCase(), items: items.length > 0 ? items : undefined };
-        if (!description) description = `${selectedMealType}${items.length > 0 ? ` — ${items.join(', ')}` : ''} — ate ${selectedAmount.toLowerCase()}.`;
-        break;
-      case 'nap':
-        title = napAction === 'sleeping' ? 'Nap Time Started' : 'Woke Up from Nap';
-        details = { status: napAction };
-        if (napAction === 'woke_up') {
-          // Auto-calculate duration from last sleeping entry
-          const lastSleep = [...timelineEntries]
-            .filter((e) => e.childId === selectedChild.id && e.type === 'nap' && e.details?.status === 'sleeping')
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
-          if (lastSleep) {
-            const diffMs = Date.now() - new Date(lastSleep.timestamp).getTime();
-            const hours = Math.floor(diffMs / 3600000);
-            const mins = Math.floor((diffMs % 3600000) / 60000);
-            const duration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-            details.duration = duration;
-            details.startTime = lastSleep.timestamp;
-            if (!description) description = `Napped for ${duration}. Woke up refreshed.`;
-          }
-        }
-        break;
-      case 'diaper':
-        title = 'Diaper Change';
-        details = { diaperType: selectedDiaper.toLowerCase() };
-        if (!description) description = `${selectedDiaper} diaper.`;
-        break;
-      case 'milestone':
-        title = milestoneTitle || 'New Milestone!';
-        details = { milestone: milestoneTitle, category: milestoneCategory };
-        if (!description) description = `${selectedChild.firstName} reached a new milestone: ${milestoneTitle || 'Amazing achievement'}!`;
-        break;
-      case 'medication':
-        title = medicationName ? `Medicine: ${medicationName}` : 'Medication Administered';
-        details = { medication: medicationName, dosage: medicationDosage, administeredAt: new Date().toISOString() };
-        if (!description) description = `${medicationName || 'Medication'}${medicationDosage ? ` — ${medicationDosage}` : ''} administered.`;
-        break;
-      case 'photo':
-        title = logNote || 'Fun Moment!';
-        if (!description) description = logNote || `A fun moment captured for ${selectedChild.firstName}!`;
-        break;
+  // Upload photos to Supabase Storage, returning public/signed URLs
+  const uploadPhotos = async (uris: string[]): Promise<string[]> => {
+    const daycareId = authProfile?.daycare_id;
+    if (!daycareId || isDemoMode) return uris; // In demo mode, keep local URIs
+    const uploaded: string[] = [];
+    for (const uri of uris) {
+      try {
+        const url = await storageService.uploadTimelinePhoto(daycareId, selectedChild.id, uri);
+        uploaded.push(url);
+      } catch (err) {
+        console.warn('[CaregiverDashboard] Photo upload failed, using local URI:', err);
+        uploaded.push(uri); // Graceful fallback
+      }
     }
+    return uploaded;
+  };
 
-    addTimelineEntry({
-      childId: selectedChild.id, type: selectedAction.type, title, description, details,
-      mood: selectedMood, photos: attachedPhotos.length > 0 ? attachedPhotos : undefined,
-    });
-    setShowLogModal(false);
-    setLogNote('');
-    setAttachedPhotos([]);
-    setSelectedAction(null);
-    showAlert('Logged!', `${selectedAction.label} entry saved for ${selectedChild.firstName}.`);
+  const submitLog = async () => {
+    if (!selectedAction || isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      let title = `${selectedAction.emoji} ${selectedAction.label}`;
+      let description = logNote || undefined;
+      let details: Record<string, any> = {};
+
+      switch (selectedAction.type) {
+        case 'meal':
+          title = selectedMealType;
+          const items = mealItems.split(',').map((s) => s.trim()).filter(Boolean);
+          details = { mealType: selectedMealType.toLowerCase(), amount: selectedAmount.toLowerCase(), items: items.length > 0 ? items : undefined };
+          if (!description) description = `${selectedMealType}${items.length > 0 ? ` — ${items.join(', ')}` : ''} — ate ${selectedAmount.toLowerCase()}.`;
+          break;
+        case 'nap':
+          title = napAction === 'sleeping' ? 'Nap Time Started' : 'Woke Up from Nap';
+          details = { status: napAction };
+          if (napAction === 'woke_up') {
+            const lastSleep = [...timelineEntries]
+              .filter((e) => e.childId === selectedChild.id && e.type === 'nap' && e.details?.status === 'sleeping')
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+            if (lastSleep) {
+              const diffMs = Date.now() - new Date(lastSleep.timestamp).getTime();
+              const hours = Math.floor(diffMs / 3600000);
+              const mins = Math.floor((diffMs % 3600000) / 60000);
+              const duration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+              details.duration = duration;
+              details.startTime = lastSleep.timestamp;
+              if (!description) description = `Napped for ${duration}. Woke up refreshed.`;
+            }
+          }
+          break;
+        case 'diaper':
+          title = 'Diaper Change';
+          details = { diaperType: selectedDiaper.toLowerCase() };
+          if (!description) description = `${selectedDiaper} diaper.`;
+          break;
+        case 'milestone':
+          title = milestoneTitle || 'New Milestone!';
+          details = { milestone: milestoneTitle, category: milestoneCategory };
+          if (!description) description = `${selectedChild.firstName} reached a new milestone: ${milestoneTitle || 'Amazing achievement'}!`;
+          break;
+        case 'medication':
+          title = medicationName ? `Medicine: ${medicationName}` : 'Medication Administered';
+          details = { medication: medicationName, dosage: medicationDosage, administeredAt: new Date().toISOString() };
+          if (!description) description = `${medicationName || 'Medication'}${medicationDosage ? ` — ${medicationDosage}` : ''} administered.`;
+          break;
+        case 'photo':
+          title = logNote || 'Fun Moment!';
+          if (!description) description = logNote || `A fun moment captured for ${selectedChild.firstName}!`;
+          break;
+      }
+
+      // Upload photos to Supabase Storage before creating the entry
+      const photoUrls = attachedPhotos.length > 0 ? await uploadPhotos(attachedPhotos) : undefined;
+
+      addTimelineEntry({
+        childId: selectedChild.id, type: selectedAction.type, title, description, details,
+        mood: selectedMood, photos: photoUrls,
+      });
+      setShowLogModal(false);
+      setLogNote('');
+      setAttachedPhotos([]);
+      setSelectedAction(null);
+      showAlert('Logged!', `${selectedAction.label} entry saved for ${selectedChild.firstName}.`);
+    } catch (err) {
+      console.error('[CaregiverDashboard] submitLog error:', err);
+      showAlert('Error', 'Failed to save entry. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const submitIncident = () => {
@@ -272,6 +306,26 @@ export const CaregiverDashboard = () => {
       default: return Colors.textMuted;
     }
   };
+
+  if (!currentUser || !selectedChild) {
+    return (
+      <View style={styles.container}>
+        <CaregiverSkeleton />
+      </View>
+    );
+  }
+
+  if (children.length === 0) {
+    return (
+      <View style={styles.container}>
+        <EmptyState
+          icon="people-outline"
+          title="No Children Assigned"
+          message="No children have been assigned to your classroom yet. Please contact your admin."
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -530,10 +584,14 @@ export const CaregiverDashboard = () => {
                 </View>
               )}
 
-              <TouchableOpacity style={styles.submitButton} onPress={submitLog}>
-                <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.submitGradient}>
-                  <Ionicons name="checkmark" size={22} color={Colors.white} />
-                  <Text style={styles.submitText}>Save Entry</Text>
+              <TouchableOpacity style={styles.submitButton} onPress={submitLog} disabled={isSubmitting}>
+                <LinearGradient colors={isSubmitting ? [Colors.textMuted, Colors.textMuted] : [Colors.primary, Colors.primaryDark]} style={styles.submitGradient}>
+                  {isSubmitting ? (
+                    <ActivityIndicator size="small" color={Colors.white} />
+                  ) : (
+                    <Ionicons name="checkmark" size={22} color={Colors.white} />
+                  )}
+                  <Text style={styles.submitText}>{isSubmitting ? 'Saving...' : 'Save Entry'}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </ScrollView>

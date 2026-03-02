@@ -9,20 +9,55 @@ import type { Database } from '../types/database';
  * Secure storage adapter for Supabase auth tokens.
  * Uses expo-secure-store on native (iOS/Android) for encrypted storage.
  * Falls back to localStorage on web.
+ *
+ * Handles the SecureStore 2048-byte limit by chunking large values
+ * (Supabase JWTs with custom claims can exceed this limit).
  */
+const CHUNK_SIZE = 2000; // Leave margin below 2048 limit
+
 const ExpoSecureStoreAdapter = {
   getItem: async (key: string): Promise<string | null> => {
     if (Platform.OS === 'web') {
       return localStorage.getItem(key);
     }
-    return SecureStore.getItemAsync(key);
+    // Try reading as single value first
+    const value = await SecureStore.getItemAsync(key);
+    if (value !== null) return value;
+
+    // Check if it was stored as chunks
+    const chunk0 = await SecureStore.getItemAsync(`${key}_chunk_0`);
+    if (chunk0 === null) return null;
+
+    let result = chunk0;
+    let i = 1;
+    while (true) {
+      const chunk = await SecureStore.getItemAsync(`${key}_chunk_${i}`);
+      if (chunk === null) break;
+      result += chunk;
+      i++;
+    }
+    return result;
   },
   setItem: async (key: string, value: string): Promise<void> => {
     if (Platform.OS === 'web') {
       localStorage.setItem(key, value);
       return;
     }
-    await SecureStore.setItemAsync(key, value);
+    if (value.length <= CHUNK_SIZE) {
+      await SecureStore.setItemAsync(key, value);
+      // Clean up any old chunks
+      try { await SecureStore.deleteItemAsync(`${key}_chunk_0`); } catch {}
+      return;
+    }
+
+    // Value exceeds limit — store in chunks
+    const chunks = Math.ceil(value.length / CHUNK_SIZE);
+    for (let i = 0; i < chunks; i++) {
+      await SecureStore.setItemAsync(`${key}_chunk_${i}`, value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
+    }
+    // Clean up the non-chunked key and any extra old chunks
+    try { await SecureStore.deleteItemAsync(key); } catch {}
+    try { await SecureStore.deleteItemAsync(`${key}_chunk_${chunks}`); } catch {}
   },
   removeItem: async (key: string): Promise<void> => {
     if (Platform.OS === 'web') {
@@ -30,6 +65,18 @@ const ExpoSecureStoreAdapter = {
       return;
     }
     await SecureStore.deleteItemAsync(key);
+    // Also clean up any chunks
+    let i = 0;
+    while (true) {
+      try {
+        const exists = await SecureStore.getItemAsync(`${key}_chunk_${i}`);
+        if (exists === null) break;
+        await SecureStore.deleteItemAsync(`${key}_chunk_${i}`);
+        i++;
+      } catch {
+        break;
+      }
+    }
   },
 };
 

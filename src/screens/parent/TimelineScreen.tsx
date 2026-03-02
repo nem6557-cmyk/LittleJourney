@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
   RefreshControl, TextInput, Modal, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,7 +38,7 @@ export const TimelineScreen = () => {
     currentRole, currentUser, selectedChild, children, selectChild,
     timelineEntries, addTimelineEntry, todayStats, showAlert,
     notifications, unreadNotificationCount, markNotificationRead, markAllNotificationsRead,
-    isLoading,
+    isLoading, refreshData,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -55,7 +55,7 @@ export const TimelineScreen = () => {
   }, []);
 
   // Show skeleton while data is loading (#35)
-  if (isLoading) {
+  if (isLoading || !selectedChild || !currentUser) {
     return (
       <View style={styles.container}>
         <TimelineSkeleton />
@@ -63,11 +63,17 @@ export const TimelineScreen = () => {
     );
   }
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
     setActiveFilter('all');
     setSearchText('');
-    setTimeout(() => setRefreshing(false), 500);
+    try {
+      await refreshData();
+    } catch {
+      // Silently fail — pull-to-refresh is best-effort
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const childEntries = useMemo(() => {
@@ -200,278 +206,289 @@ export const TimelineScreen = () => {
     ]);
   };
 
+  const renderTimelineHeader = () => (
+    <>
+      {/* Hero Header */}
+      <LinearGradient
+        colors={currentRole === 'parent' ? ['#667eea', '#764ba2'] : ['#4facfe', '#00f2fe']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerContent}>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={styles.greeting}>
+                {currentRole === 'parent' ? getGreetingTime() : selectedChild.classroom || 'Classroom'}
+              </Text>
+              <Text style={styles.headerTitle}>{firstName}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.notificationBtn}
+              onPress={() => setShowNotifications(!showNotifications)}
+              accessibilityLabel={`Notifications${unreadNotificationCount > 0 ? `, ${unreadNotificationCount} unread` : ''}`}
+              accessibilityRole="button"
+            >
+              <Ionicons name="notifications-outline" size={22} color={Colors.white} />
+              {unreadNotificationCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{unreadNotificationCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Child Card */}
+          <View style={styles.childCard}>
+            <View style={styles.childAvatar}>
+              <Text style={styles.childAvatarText}>{childInitial}</Text>
+            </View>
+            <View style={styles.childInfo}>
+              <Text style={styles.childName}>
+                {selectedChild.firstName} {selectedChild.lastName}
+              </Text>
+              <Text style={styles.childMeta}>
+                {getChildAge(selectedChild.dateOfBirth)} {selectedChild.classroom ? `\u2022 ${selectedChild.classroom}` : ''}
+              </Text>
+            </View>
+            <View style={styles.moodContainer}>
+              <Text style={styles.moodEmoji}>{getMoodEmoji(todayStats.currentMood)}</Text>
+              <Text style={styles.moodLabel}>{todayStats.currentMood}</Text>
+            </View>
+          </View>
+
+          {/* Quick Stats */}
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={styles.statEmoji}>🍽️</Text>
+              <Text style={styles.statValue}>{todayStats.meals}</Text>
+              <Text style={styles.statLabel}>Meals</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={styles.statEmoji}>😴</Text>
+              <Text style={styles.statValue}>{todayStats.napDuration}</Text>
+              <Text style={styles.statLabel}>Nap</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={styles.statEmoji}>🎨</Text>
+              <Text style={styles.statValue}>{todayStats.activities}</Text>
+              <Text style={styles.statLabel}>Activities</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={styles.statEmoji}>📸</Text>
+              <Text style={styles.statValue}>{todayStats.photos}</Text>
+              <Text style={styles.statLabel}>Photos</Text>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* Notification Dropdown */}
+      {showNotifications && (
+        <View style={[styles.notificationDropdown, Shadows.large]}>
+          <View style={styles.notifDropHeader}>
+            <Text style={styles.notifDropTitle}>Notifications</Text>
+            {unreadNotificationCount > 0 && (
+              <TouchableOpacity onPress={() => { markAllNotificationsRead(); setShowNotifications(false); }}>
+                <Text style={styles.markAllRead}>Mark all read</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
+            {notifications.slice(0, notifDisplayCount).map((notif) => (
+              <TouchableOpacity
+                key={notif.id}
+                style={[styles.notifItem, !notif.read && styles.notifItemUnread]}
+                onPress={() => {
+                  markNotificationRead(notif.id);
+                  setShowNotifications(false);
+                }}
+              >
+                <Text style={styles.notifIcon}>{notif.icon || '🔔'}</Text>
+                <View style={styles.notifContent}>
+                  <Text style={[styles.notifTitle, !notif.read && styles.notifTitleUnread]}>{notif.title}</Text>
+                  <Text style={styles.notifBody} numberOfLines={2}>{notif.body}</Text>
+                </View>
+                {!notif.read && <View style={styles.notifDot} />}
+              </TouchableOpacity>
+            ))}
+            {notifications.length > notifDisplayCount && (
+              <TouchableOpacity
+                style={styles.showMoreNotifs}
+                onPress={() => setNotifDisplayCount((prev) => prev + 8)}
+              >
+                <Text style={styles.showMoreNotifsText}>Show More ({notifications.length - notifDisplayCount} remaining)</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.viewAllNotifsBtn}
+            onPress={() => { setShowNotifications(false); setShowAllNotifications(true); }}
+          >
+            <Text style={styles.viewAllNotifsText}>View All Notifications</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Caregiver Note */}
+      <View style={styles.caregiverNote}>
+        <View style={[styles.caregiverNoteCard, Shadows.small]}>
+          <View style={styles.caregiverHeader}>
+            <View style={styles.caregiverAvatar}>
+              <Text style={styles.caregiverAvatarText}>{caregiverInitial}</Text>
+            </View>
+            <View>
+              <Text style={styles.caregiverName}>{caregiverName}</Text>
+              <Text style={styles.caregiverRole}>Lead Teacher, {selectedChild.classroom || 'Classroom'}</Text>
+            </View>
+          </View>
+          <Text style={styles.caregiverMessage}>"{latestNote}"</Text>
+        </View>
+      </View>
+
+      {/* Child selector (parents with multiple children) */}
+      {currentRole === 'parent' && children.length > 1 && (
+        <View style={styles.childSelector}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: Spacing.lg, gap: Spacing.sm }}>
+            {children.map((child) => {
+              const isActive = child.id === selectedChild.id;
+              return (
+                <TouchableOpacity
+                  key={child.id}
+                  style={[styles.childSelectorChip, isActive && styles.childSelectorChipActive]}
+                  onPress={() => selectChild(child.id)}
+                  accessibilityLabel={`View ${child.firstName}'s timeline`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                >
+                  <View style={[styles.childSelectorAvatar, isActive && { backgroundColor: Colors.white }]}>
+                    <Text style={[styles.childSelectorAvatarText, isActive && { color: Colors.primary }]}>
+                      {child.firstName.charAt(0)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.childSelectorName, isActive && styles.childSelectorNameActive]}>
+                    {child.firstName}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Allergy banner */}
+      {selectedChild.allergies.length > 0 && (
+        <View style={styles.allergyBanner}>
+          <View style={[styles.allergyCard, Shadows.small]}>
+            <Ionicons name="warning" size={18} color={Colors.danger} />
+            <Text style={styles.allergyTitle}>Allergies:</Text>
+            <Text style={styles.allergyList}>{selectedChild.allergies.join(', ')}</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Search bar */}
+      <View style={styles.searchContainer}>
+        <View style={[styles.searchBar, Shadows.small]}>
+          <Ionicons name="search" size={18} color={Colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search timeline..."
+            placeholderTextColor={Colors.textMuted}
+            value={searchText}
+            onChangeText={setSearchText}
+            accessibilityLabel="Search timeline entries"
+          />
+          {searchText.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchText('')}>
+              <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Filter chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
+        {filterOptions.map((f) => (
+          <TouchableOpacity
+            key={f.type}
+            style={[styles.filterChip, activeFilter === f.type && styles.filterChipActive]}
+            onPress={() => setActiveFilter(f.type)}
+            accessibilityLabel={`Filter by ${f.label}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: activeFilter === f.type }}
+          >
+            <Text style={[styles.filterChipText, activeFilter === f.type && styles.filterChipTextActive]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Live Status */}
+      <View style={styles.liveStatus}>
+        <View style={styles.liveDot} />
+        <Text style={styles.liveText}>Live Updates</Text>
+        <Text style={styles.liveSubtext}>{'\u2022'} {childEntries.length} entries{activeFilter !== 'all' ? ` (filtered)` : ' today'}</Text>
+      </View>
+    </>
+  );
+
+  const renderTimelineFooter = () => (
+    <>
+      {childEntries.length > 0 && (
+        <View style={styles.timelineEnd}>
+          <View style={styles.timelineEndDot} />
+          <Text style={styles.timelineEndText}>Start of day</Text>
+        </View>
+      )}
+      <View style={{ height: 100 }} />
+    </>
+  );
+
+  const renderTimelineEmpty = () => (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyEmoji}>🌤️</Text>
+      <Text style={styles.emptyTitle}>
+        {searchText || activeFilter !== 'all' ? 'No matching entries' : 'No entries yet today'}
+      </Text>
+      <Text style={styles.emptySubtitle}>
+        {searchText || activeFilter !== 'all'
+          ? 'Try adjusting your search or filter.'
+          : 'Updates will appear here as caregivers log activities.'}
+      </Text>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
-      <ScrollView
+      <FlatList
+        data={childEntries}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item, index }) => (
+          <View style={styles.timeline}>
+            <TimelineCard
+              entry={item}
+              isFirst={index === 0}
+              isLast={index === childEntries.length - 1}
+            />
+          </View>
+        )}
+        ListHeaderComponent={renderTimelineHeader}
+        ListFooterComponent={renderTimelineFooter}
+        ListEmptyComponent={renderTimelineEmpty}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
         }
-        scrollEventThrottle={16}
-      >
-        {/* Hero Header */}
-        <LinearGradient
-          colors={currentRole === 'parent' ? ['#667eea', '#764ba2'] : ['#4facfe', '#00f2fe']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
-        >
-          <View style={styles.headerContent}>
-            <View style={styles.headerTop}>
-              <View>
-                <Text style={styles.greeting}>
-                  {currentRole === 'parent' ? getGreetingTime() : selectedChild.classroom || 'Classroom'}
-                </Text>
-                <Text style={styles.headerTitle}>{firstName}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.notificationBtn}
-                onPress={() => setShowNotifications(!showNotifications)}
-                accessibilityLabel={`Notifications${unreadNotificationCount > 0 ? `, ${unreadNotificationCount} unread` : ''}`}
-                accessibilityRole="button"
-              >
-                <Ionicons name="notifications-outline" size={22} color={Colors.white} />
-                {unreadNotificationCount > 0 && (
-                  <View style={styles.notifBadge}>
-                    <Text style={styles.notifBadgeText}>{unreadNotificationCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {/* Child Card */}
-            <View style={styles.childCard}>
-              <View style={styles.childAvatar}>
-                <Text style={styles.childAvatarText}>{childInitial}</Text>
-              </View>
-              <View style={styles.childInfo}>
-                <Text style={styles.childName}>
-                  {selectedChild.firstName} {selectedChild.lastName}
-                </Text>
-                <Text style={styles.childMeta}>
-                  {getChildAge(selectedChild.dateOfBirth)} {selectedChild.classroom ? `\u2022 ${selectedChild.classroom}` : ''}
-                </Text>
-              </View>
-              <View style={styles.moodContainer}>
-                <Text style={styles.moodEmoji}>{getMoodEmoji(todayStats.currentMood)}</Text>
-                <Text style={styles.moodLabel}>{todayStats.currentMood}</Text>
-              </View>
-            </View>
-
-            {/* Quick Stats */}
-            <View style={styles.statsRow}>
-              <View style={styles.stat}>
-                <Text style={styles.statEmoji}>🍽️</Text>
-                <Text style={styles.statValue}>{todayStats.meals}</Text>
-                <Text style={styles.statLabel}>Meals</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statEmoji}>😴</Text>
-                <Text style={styles.statValue}>{todayStats.napDuration}</Text>
-                <Text style={styles.statLabel}>Nap</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statEmoji}>🎨</Text>
-                <Text style={styles.statValue}>{todayStats.activities}</Text>
-                <Text style={styles.statLabel}>Activities</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statEmoji}>📸</Text>
-                <Text style={styles.statValue}>{todayStats.photos}</Text>
-                <Text style={styles.statLabel}>Photos</Text>
-              </View>
-            </View>
-          </View>
-        </LinearGradient>
-
-        {/* Notification Dropdown */}
-        {showNotifications && (
-          <View style={[styles.notificationDropdown, Shadows.large]}>
-            <View style={styles.notifDropHeader}>
-              <Text style={styles.notifDropTitle}>Notifications</Text>
-              {unreadNotificationCount > 0 && (
-                <TouchableOpacity onPress={() => { markAllNotificationsRead(); setShowNotifications(false); }}>
-                  <Text style={styles.markAllRead}>Mark all read</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-            <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
-              {notifications.slice(0, notifDisplayCount).map((notif) => (
-                <TouchableOpacity
-                  key={notif.id}
-                  style={[styles.notifItem, !notif.read && styles.notifItemUnread]}
-                  onPress={() => {
-                    markNotificationRead(notif.id);
-                    setShowNotifications(false);
-                  }}
-                >
-                  <Text style={styles.notifIcon}>{notif.icon || '🔔'}</Text>
-                  <View style={styles.notifContent}>
-                    <Text style={[styles.notifTitle, !notif.read && styles.notifTitleUnread]}>{notif.title}</Text>
-                    <Text style={styles.notifBody} numberOfLines={2}>{notif.body}</Text>
-                  </View>
-                  {!notif.read && <View style={styles.notifDot} />}
-                </TouchableOpacity>
-              ))}
-              {notifications.length > notifDisplayCount && (
-                <TouchableOpacity
-                  style={styles.showMoreNotifs}
-                  onPress={() => setNotifDisplayCount((prev) => prev + 8)}
-                >
-                  <Text style={styles.showMoreNotifsText}>Show More ({notifications.length - notifDisplayCount} remaining)</Text>
-                </TouchableOpacity>
-              )}
-            </ScrollView>
-            <TouchableOpacity
-              style={styles.viewAllNotifsBtn}
-              onPress={() => { setShowNotifications(false); setShowAllNotifications(true); }}
-            >
-              <Text style={styles.viewAllNotifsText}>View All Notifications</Text>
-              <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Caregiver Note */}
-        <View style={styles.caregiverNote}>
-          <View style={[styles.caregiverNoteCard, Shadows.small]}>
-            <View style={styles.caregiverHeader}>
-              <View style={styles.caregiverAvatar}>
-                <Text style={styles.caregiverAvatarText}>{caregiverInitial}</Text>
-              </View>
-              <View>
-                <Text style={styles.caregiverName}>{caregiverName}</Text>
-                <Text style={styles.caregiverRole}>Lead Teacher, {selectedChild.classroom || 'Classroom'}</Text>
-              </View>
-            </View>
-            <Text style={styles.caregiverMessage}>"{latestNote}"</Text>
-          </View>
-        </View>
-
-        {/* Child selector (parents with multiple children) */}
-        {currentRole === 'parent' && children.length > 1 && (
-          <View style={styles.childSelector}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: Spacing.lg, gap: Spacing.sm }}>
-              {children.map((child) => {
-                const isActive = child.id === selectedChild.id;
-                return (
-                  <TouchableOpacity
-                    key={child.id}
-                    style={[styles.childSelectorChip, isActive && styles.childSelectorChipActive]}
-                    onPress={() => selectChild(child.id)}
-                    accessibilityLabel={`View ${child.firstName}'s timeline`}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isActive }}
-                  >
-                    <View style={[styles.childSelectorAvatar, isActive && { backgroundColor: Colors.white }]}>
-                      <Text style={[styles.childSelectorAvatarText, isActive && { color: Colors.primary }]}>
-                        {child.firstName.charAt(0)}
-                      </Text>
-                    </View>
-                    <Text style={[styles.childSelectorName, isActive && styles.childSelectorNameActive]}>
-                      {child.firstName}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Allergy banner */}
-        {selectedChild.allergies.length > 0 && (
-          <View style={styles.allergyBanner}>
-            <View style={[styles.allergyCard, Shadows.small]}>
-              <Ionicons name="warning" size={18} color={Colors.danger} />
-              <Text style={styles.allergyTitle}>Allergies:</Text>
-              <Text style={styles.allergyList}>{selectedChild.allergies.join(', ')}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Search bar */}
-        <View style={styles.searchContainer}>
-          <View style={[styles.searchBar, Shadows.small]}>
-            <Ionicons name="search" size={18} color={Colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search timeline..."
-              placeholderTextColor={Colors.textMuted}
-              value={searchText}
-              onChangeText={setSearchText}
-              accessibilityLabel="Search timeline entries"
-            />
-            {searchText.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchText('')}>
-                <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Filter chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
-          {filterOptions.map((f) => (
-            <TouchableOpacity
-              key={f.type}
-              style={[styles.filterChip, activeFilter === f.type && styles.filterChipActive]}
-              onPress={() => setActiveFilter(f.type)}
-              accessibilityLabel={`Filter by ${f.label}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: activeFilter === f.type }}
-            >
-              <Text style={[styles.filterChipText, activeFilter === f.type && styles.filterChipTextActive]}>
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Live Status */}
-        <View style={styles.liveStatus}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>Live Updates</Text>
-          <Text style={styles.liveSubtext}>{'\u2022'} {childEntries.length} entries{activeFilter !== 'all' ? ` (filtered)` : ' today'}</Text>
-        </View>
-
-        {/* Timeline */}
-        <View style={styles.timeline}>
-          {childEntries.map((entry, index) => (
-            <TimelineCard
-              key={entry.id}
-              entry={entry}
-              isFirst={index === 0}
-              isLast={index === childEntries.length - 1}
-            />
-          ))}
-        </View>
-
-        {childEntries.length === 0 && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>🌤️</Text>
-            <Text style={styles.emptyTitle}>
-              {searchText || activeFilter !== 'all' ? 'No matching entries' : 'No entries yet today'}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {searchText || activeFilter !== 'all'
-                ? 'Try adjusting your search or filter.'
-                : 'Updates will appear here as caregivers log activities.'}
-            </Text>
-          </View>
-        )}
-
-        {childEntries.length > 0 && (
-          <View style={styles.timelineEnd}>
-            <View style={styles.timelineEndDot} />
-            <Text style={styles.timelineEndText}>Start of day</Text>
-          </View>
-        )}
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+      />
 
       {/* Full Notifications Modal */}
       <Modal visible={showAllNotifications} animationType="slide" transparent>

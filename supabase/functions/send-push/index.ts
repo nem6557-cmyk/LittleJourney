@@ -23,6 +23,27 @@ interface PushMessage {
 
 serve(async (req) => {
   try {
+    // Verify the request is authorized (either from Supabase webhook or authenticated user)
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      // If called directly by a client, verify the JWT
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+      }
+      // Verify caller is staff (caregiver or admin)
+      const { data: callerProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      if (!callerProfile || !['caregiver', 'admin'].includes(callerProfile.role)) {
+        return new Response(JSON.stringify({ error: 'Forbidden: staff only' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+      }
+    }
+    // If no auth header, allow if called from Supabase webhook (internal)
+
     const { record } = await req.json();
 
     if (!record?.user_id) {

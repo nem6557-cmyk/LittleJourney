@@ -8,6 +8,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
+import { GallerySkeleton } from '../../components/LoadingSkeleton';
+import { EmptyState } from '../../components/EmptyState';
 import { Milestone, LearningPlan, CalendarEvent } from '../../types';
 
 type Tab = 'gallery' | 'milestones' | 'calendar' | 'learning';
@@ -51,7 +53,16 @@ export const GalleryScreen = () => {
     learningPlans: contextPlans,
     milestones: contextMilestones,
     calendarEvents: contextCalendarEvents,
+    currentUser,
   } = useApp();
+
+  if (!selectedChild || !currentUser) {
+    return (
+      <View style={styles.container}>
+        <GallerySkeleton />
+      </View>
+    );
+  }
   const [activeTab, setActiveTab] = useState<Tab>('gallery');
   const [milestoneData, setMilestoneData] = useState<Milestone[]>([]);
   const [learningPlans, setLearningPlans] = useState<LearningPlan[]>(contextPlans);
@@ -204,7 +215,7 @@ export const GalleryScreen = () => {
       );
     }
     return events;
-  }, [calendarSearch]);
+  }, [calendarSearch, calendarEvents]);
 
   // Upcoming vs past events
   const now = new Date();

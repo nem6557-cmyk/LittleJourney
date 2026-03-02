@@ -353,10 +353,17 @@ CREATE POLICY "Users can update own notifications"
   ON notifications FOR UPDATE
   USING (user_id = auth.uid());
 
--- System/triggers create notifications (use service role key in edge functions)
-CREATE POLICY "Service can insert notifications"
+-- Staff can create notifications for users in their daycare
+CREATE POLICY "Staff can insert notifications"
   ON notifications FOR INSERT
-  WITH CHECK (true);
+  WITH CHECK (
+    get_user_role() IN ('caregiver', 'admin')
+    AND EXISTS (
+      SELECT 1 FROM profiles p
+      WHERE p.id = user_id
+        AND p.daycare_id = get_user_daycare_id()
+    )
+  );
 
 -- ============================================================
 -- ATTENDANCE
@@ -497,10 +504,15 @@ CREATE POLICY "Users can view own daycare subscription"
   ON subscriptions FOR SELECT
   USING (daycare_id = get_user_daycare_id());
 
--- Only webhooks (service role) update subscriptions
-CREATE POLICY "Service can manage subscriptions"
-  ON subscriptions FOR ALL
-  USING (true);
+-- Admins can view/update own daycare subscription
+CREATE POLICY "Admins can update own daycare subscription"
+  ON subscriptions FOR UPDATE
+  USING (daycare_id = get_user_daycare_id() AND get_user_role() = 'admin');
+
+-- Only admins can create subscriptions for their daycare
+CREATE POLICY "Admins can insert daycare subscription"
+  ON subscriptions FOR INSERT
+  WITH CHECK (daycare_id = get_user_daycare_id() AND get_user_role() = 'admin');
 
 -- ============================================================
 -- PARENT SUBSCRIPTIONS
@@ -510,9 +522,15 @@ CREATE POLICY "Parents can view own subscription"
   ON parent_subscriptions FOR SELECT
   USING (parent_id = auth.uid());
 
-CREATE POLICY "Service can manage parent subscriptions"
-  ON parent_subscriptions FOR ALL
-  USING (true);
+-- Parents can update their own subscription
+CREATE POLICY "Parents can update own subscription"
+  ON parent_subscriptions FOR UPDATE
+  USING (parent_id = auth.uid());
+
+-- Parents can create their own subscription
+CREATE POLICY "Parents can insert own subscription"
+  ON parent_subscriptions FOR INSERT
+  WITH CHECK (parent_id = auth.uid());
 
 -- ============================================================
 -- INVITE CODES

@@ -7,15 +7,24 @@ import * as Sharing from 'expo-sharing';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { formatDate, formatTime, getMoodEmoji, getActivityEmoji } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
+import { DailyReportSkeleton } from '../../components/LoadingSkeleton';
 
 export const DailyReportScreen = () => {
   const {
     selectedChild, todayStats, timelineEntries, shareContent, showAlert,
-    generateDailyNarrative, generateHighlights, sendMessage,
+    generateDailyNarrative, generateHighlights, sendMessage, conversations, currentUser,
   } = useApp();
   const [showFullNarrative, setShowFullNarrative] = useState(false);
   const [showEntries, setShowEntries] = useState(false);
   const [thanked, setThanked] = useState(false);
+
+  if (!selectedChild || !currentUser) {
+    return (
+      <View style={styles.container}>
+        <DailyReportSkeleton />
+      </View>
+    );
+  }
 
   const todayDate = new Date().toISOString().split('T')[0];
 
@@ -117,11 +126,18 @@ export const DailyReportScreen = () => {
 
   const handleThank = () => {
     setThanked(true);
-    sendMessage(
-      `Thank you so much for taking such great care of ${selectedChild.firstName} today! We really appreciate everything you do! 💝`,
-      false,
-      'conv1'
+    // Find the conversation with the caregiver (not hardcoded)
+    const caregiverConv = conversations.find((c) =>
+      c.participants.some((p) => p.role === 'caregiver' && p.id !== currentUser.id)
     );
+    const convId = caregiverConv?.id || conversations[0]?.id;
+    if (convId) {
+      sendMessage(
+        `Thank you so much for taking such great care of ${selectedChild.firstName} today! We really appreciate everything you do! 💝`,
+        false,
+        convId
+      );
+    }
     showAlert('Thank You Sent!', `Your appreciation has been sent to ${caregiverName}.`);
   };
 

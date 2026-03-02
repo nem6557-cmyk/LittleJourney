@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { withRetry, isOnline, cacheData, getCachedData } from '../lib/offline';
+import { withRetry, isOnline, cacheData, getCachedData, queueMutation } from '../lib/offline';
 import type { Database } from '../types/database';
 
 type TimelineInsert = Database['public']['Tables']['timeline_entries']['Insert'];
@@ -84,6 +84,11 @@ export const timelineService = {
   },
 
   addEntry: async (entry: TimelineInsert) => {
+    const online = await isOnline();
+    if (!online) {
+      await queueMutation({ table: 'timeline_entries', operation: 'insert', data: entry as Record<string, unknown> });
+      return { ...entry, id: `offline_${Date.now()}`, created_at: new Date().toISOString() };
+    }
     return withRetry(async () => {
       const { data, error } = await supabase
         .from('timeline_entries')

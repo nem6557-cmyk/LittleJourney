@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput,
+  View, Text, StyleSheet, ScrollView, FlatList, TextInput,
   TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Image, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -143,7 +143,7 @@ export const MessagesScreen = () => {
   };
 
   // Show skeleton while data is loading (#35)
-  if (isLoading) {
+  if (isLoading || !currentUser || !selectedChild) {
     return (
       <View style={styles.container}>
         <MessagesSkeleton />
@@ -206,18 +206,29 @@ export const MessagesScreen = () => {
           ))}
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.convListContent}>
-          {/* Encryption notice */}
-          <View style={styles.encryptionNotice}>
-            <Ionicons name="lock-closed" size={12} color={Colors.textMuted} />
-            <Text style={styles.encryptionText}>All messages are encrypted and private</Text>
-          </View>
-
-          {filteredConversations.map((conv) => {
+        <FlatList
+          data={filteredConversations}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.convListContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <View style={styles.encryptionNotice}>
+              <Ionicons name="lock-closed" size={12} color={Colors.textMuted} />
+              <Text style={styles.encryptionText}>All messages are encrypted and private</Text>
+            </View>
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="chatbubbles-outline" size={48} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>No conversations found</Text>
+            </View>
+          }
+          ListFooterComponent={<View style={{ height: 100 }} />}
+          initialNumToRender={10}
+          renderItem={({ item: conv }) => {
             const unread = getConversationUnread(conv);
             return (
               <TouchableOpacity
-                key={conv.id}
                 style={[styles.convItem, Shadows.small]}
                 onPress={() => setActiveConversation(conv.id)}
               >
@@ -254,16 +265,8 @@ export const MessagesScreen = () => {
                 </View>
               </TouchableOpacity>
             );
-          })}
-
-          {filteredConversations.length === 0 && (
-            <View style={styles.emptyState}>
-              <Ionicons name="chatbubbles-outline" size={48} color={Colors.textMuted} />
-              <Text style={styles.emptyTitle}>No conversations found</Text>
-            </View>
-          )}
-          <View style={{ height: 100 }} />
-        </ScrollView>
+          }}
+        />
       </View>
     );
   }
@@ -310,7 +313,7 @@ export const MessagesScreen = () => {
       {/* Messages */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={90}
       >
         <ScrollView

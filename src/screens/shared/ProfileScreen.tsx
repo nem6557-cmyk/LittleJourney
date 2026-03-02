@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
@@ -11,6 +12,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { trackScreen } from '../../lib/analytics';
+
+const PREFS_STORAGE_KEY = '@littlejourney/user_preferences';
 
 type SubScreen = null | 'child_profile' | 'family' | 'pickups' | 'health' | 'invoices' | 'invoice_detail' | 'notifications' | 'about'
   | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'lesson_plans' | 'incidents';
@@ -38,7 +41,7 @@ export const ProfileScreen = () => {
   const [smartNotifs, setSmartNotifs] = useState(true);
   const [biometric, setBiometric] = useState(true);
   const [offlineMode, setOfflineMode] = useState(true);
-  const [paymentCard] = useState({ type: 'Visa', last4: '4242' });
+  const [paymentCard, setPaymentCard] = useState<{ type: string; last4: string } | null>(null);
 
   // Track screen view on mount (#34)
   useEffect(() => {
@@ -60,6 +63,54 @@ export const ProfileScreen = () => {
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [autoTranslate, setAutoTranslate] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState('Spanish');
+
+  // Auto-pay
+  const [autoPayEnabled, setAutoPayEnabled] = useState(false);
+  const [autoPayDay, setAutoPayDay] = useState(1);
+
+  // Load saved preferences from AsyncStorage on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(PREFS_STORAGE_KEY);
+        if (saved) {
+          const prefs = JSON.parse(saved);
+          if (prefs.smartNotifs !== undefined) setSmartNotifs(prefs.smartNotifs);
+          if (prefs.mealNotifs !== undefined) setMealNotifs(prefs.mealNotifs);
+          if (prefs.napNotifs !== undefined) setNapNotifs(prefs.napNotifs);
+          if (prefs.photoNotifs !== undefined) setPhotoNotifs(prefs.photoNotifs);
+          if (prefs.milestoneNotifs !== undefined) setMilestoneNotifs(prefs.milestoneNotifs);
+          if (prefs.photoSharing !== undefined) setPhotoSharing(prefs.photoSharing);
+          if (prefs.classPhotos !== undefined) setClassPhotos(prefs.classPhotos);
+          if (prefs.analyticsSharing !== undefined) setAnalyticsSharing(prefs.analyticsSharing);
+          if (prefs.selectedLanguage) setSelectedLanguage(prefs.selectedLanguage);
+          if (prefs.autoTranslate !== undefined) setAutoTranslate(prefs.autoTranslate);
+          if (prefs.targetLanguage) setTargetLanguage(prefs.targetLanguage);
+          if (prefs.autoPayEnabled !== undefined) setAutoPayEnabled(prefs.autoPayEnabled);
+          if (prefs.autoPayDay !== undefined) setAutoPayDay(prefs.autoPayDay);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Save preferences to AsyncStorage whenever they change
+  const savePreferences = useCallback(async () => {
+    try {
+      await AsyncStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify({
+        smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
+        photoSharing, classPhotos, analyticsSharing,
+        selectedLanguage, autoTranslate, targetLanguage,
+        autoPayEnabled, autoPayDay,
+      }));
+    } catch {}
+  }, [smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
+      photoSharing, classPhotos, analyticsSharing,
+      selectedLanguage, autoTranslate, targetLanguage,
+      autoPayEnabled, autoPayDay]);
+
+  useEffect(() => {
+    savePreferences();
+  }, [savePreferences]);
 
   // Change password
   const [currentPassword, setCurrentPassword] = useState('');
@@ -84,10 +135,6 @@ export const ProfileScreen = () => {
   const [personName, setPersonName] = useState('');
   const [personRelation, setPersonRelation] = useState('');
   const [personPhone, setPersonPhone] = useState('');
-
-  // Auto-pay
-  const [autoPayEnabled, setAutoPayEnabled] = useState(false);
-  const [autoPayDay, setAutoPayDay] = useState(1);
 
   const handleMenuTap = (label: string, sub?: SubScreen) => {
     if (sub) {
@@ -132,7 +179,7 @@ export const ProfileScreen = () => {
     {
       title: 'Billing',
       items: [
-        { icon: 'card-outline', label: 'Payment Methods', subtitle: `${paymentCard.type} ending in ${paymentCard.last4}`, sub: 'payment_methods' },
+        { icon: 'card-outline', label: 'Payment Methods', subtitle: paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file', sub: 'payment_methods' },
         { icon: 'receipt-outline', label: 'Invoices & Receipts', subtitle: pendingAmount > 0 ? `$${pendingAmount.toFixed(2)} pending` : 'All paid', sub: 'invoices' },
         { icon: 'document-text-outline', label: 'Tax Documents', subtitle: '2025 tax receipt available' },
       ],
@@ -196,15 +243,14 @@ export const ProfileScreen = () => {
           <View>
             <Text style={styles.subTitle}>Family Network</Text>
             <Text style={styles.subDesc}>People who can view {selectedChild.firstName}'s updates</Text>
-            {['Sarah Ahmed (Parent)', 'Omar Ahmed (Parent)', 'Fatima Ahmed (Grandmother)'].map((name, i) => (
-              <View key={i} style={styles.familyRow}>
-                <View style={styles.contactAvatar}><Text style={styles.contactAvatarText}>{name.charAt(0)}</Text></View>
-                <Text style={styles.familyName}>{name}</Text>
-                <View style={[styles.permBadge, { backgroundColor: i < 2 ? Colors.successLight : Colors.primaryLight + '20' }]}>
-                  <Text style={[styles.permText, { color: i < 2 ? Colors.success : Colors.primary }]}>{i < 2 ? 'Full Access' : 'View Only'}</Text>
-                </View>
+            <View style={styles.familyRow}>
+              <View style={styles.contactAvatar}><Text style={styles.contactAvatarText}>{currentUser.name.charAt(0)}</Text></View>
+              <Text style={styles.familyName}>{currentUser.name} (You)</Text>
+              <View style={[styles.permBadge, { backgroundColor: Colors.successLight }]}>
+                <Text style={[styles.permText, { color: Colors.success }]}>Full Access</Text>
               </View>
-            ))}
+            </View>
+            <Text style={styles.emptyText}>Invite family members to view {selectedChild.firstName}'s updates.</Text>
             <TouchableOpacity style={styles.addButton} onPress={() => { setShowInviteModal(true); setSubScreen(null); }}>
               <Ionicons name="person-add-outline" size={18} color={Colors.primary} />
               <Text style={styles.addButtonText}>Invite Family Member</Text>
@@ -316,7 +362,7 @@ export const ProfileScreen = () => {
                   <Text style={styles.formLabel}>Payment Method</Text>
                   <View style={styles.cardDisplay}>
                     <Ionicons name="card" size={20} color={Colors.primary} />
-                    <Text style={styles.cardDisplayText}>{paymentCard.type} ending in {paymentCard.last4}</Text>
+                    <Text style={styles.cardDisplayText}>{paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file'}</Text>
                   </View>
                   <TouchableOpacity
                     style={styles.saveButton}
@@ -366,7 +412,7 @@ export const ProfileScreen = () => {
               <TouchableOpacity
                 style={styles.payButton}
                 onPress={() => {
-                  Alert.alert('Confirm Payment', `Pay $${selectedInvoice.amount.toFixed(2)} with ${paymentCard.type} ending in ${paymentCard.last4}?`, [
+                  Alert.alert('Confirm Payment', `Pay $${selectedInvoice.amount.toFixed(2)}${paymentCard ? ` with ${paymentCard.type} ending in ${paymentCard.last4}` : ''}?`, [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Pay Now', onPress: () => {
                       payInvoice(selectedInvoice.id);
@@ -562,12 +608,21 @@ export const ProfileScreen = () => {
             <TouchableOpacity
               style={[styles.saveButton, (!currentPassword || newPassword.length < 8 || newPassword !== confirmPassword) && styles.saveButtonDisabled]}
               disabled={!currentPassword || newPassword.length < 8 || newPassword !== confirmPassword}
-              onPress={() => {
-                showAlert('Password Updated', 'Your password has been changed successfully.');
-                setCurrentPassword('');
-                setNewPassword('');
-                setConfirmPassword('');
-                setSubScreen(null);
+              onPress={async () => {
+                try {
+                  const { error } = await supabase.auth.updateUser({ password: newPassword });
+                  if (error) {
+                    showAlert('Error', error.message || 'Failed to update password. Please try again.');
+                    return;
+                  }
+                  showAlert('Password Updated', 'Your password has been changed successfully.');
+                  setCurrentPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                  setSubScreen(null);
+                } catch (err: any) {
+                  showAlert('Error', err.message || 'Failed to update password.');
+                }
               }}
             >
               <Text style={styles.saveButtonText}>Update Password</Text>
@@ -706,13 +761,15 @@ export const ProfileScreen = () => {
                 <Ionicons name="card" size={24} color={Colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.prefLabel}>{paymentCard.type} ending in {paymentCard.last4}</Text>
-                <Text style={styles.prefDesc}>Default payment method</Text>
+                <Text style={styles.prefLabel}>{paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file'}</Text>
+                <Text style={styles.prefDesc}>{paymentCard ? 'Default payment method' : 'Add a payment method to get started'}</Text>
               </View>
-              <View style={[styles.verifiedBadge, { backgroundColor: Colors.successLight }]}>
-                <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-                <Text style={{ fontSize: FontSizes.xs, color: Colors.success, fontWeight: '600' }}>Active</Text>
-              </View>
+              {paymentCard && (
+                <View style={[styles.verifiedBadge, { backgroundColor: Colors.successLight }]}>
+                  <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
+                  <Text style={{ fontSize: FontSizes.xs, color: Colors.success, fontWeight: '600' }}>Active</Text>
+                </View>
+              )}
             </View>
             <TouchableOpacity style={styles.addButton} onPress={() => showAlert('Add Card', 'Card entry form would appear here with Stripe/payment integration.')}>
               <Ionicons name="add-circle-outline" size={18} color={Colors.primary} />

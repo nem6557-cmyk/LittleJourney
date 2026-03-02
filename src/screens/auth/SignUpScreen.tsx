@@ -11,10 +11,11 @@ import { signUpSchema } from '../../lib/validators';
 import type { UserRole } from '../../types';
 
 interface SignUpScreenProps {
-  onNavigateToLogin: () => void;
+  navigation?: any;
+  onNavigateToLogin?: () => void;
 }
 
-export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigateToLogin }) => {
+export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNavigateToLogin }) => {
   const { signUp } = useAuth();
 
   const [firstName, setFirstName] = useState('');
@@ -61,7 +62,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigateToLogin })
         Alert.alert(
           'Account Created!',
           'Your account has been created successfully. Please sign in to continue.',
-          [{ text: 'Sign In', onPress: onNavigateToLogin }]
+          [{ text: 'Sign In', onPress: () => navigation ? navigation.navigate('Login') : onNavigateToLogin?.() }]
         );
       }
     } catch (err) {
@@ -196,7 +197,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigateToLogin })
           </TouchableOpacity>
 
           {/* Navigate to Login */}
-          <TouchableOpacity style={styles.switchBtn} onPress={onNavigateToLogin}>
+          <TouchableOpacity style={styles.switchBtn} onPress={() => navigation ? navigation.navigate('Login') : onNavigateToLogin?.()}>
             <Text style={styles.switchText}>
               Already have an account? <Text style={styles.link}>Sign In</Text>
             </Text>

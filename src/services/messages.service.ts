@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { withRetry, isOnline, cacheData, getCachedData } from '../lib/offline';
+import { withRetry, isOnline, cacheData, getCachedData, queueMutation } from '../lib/offline';
 import type { Database } from '../types/database';
 
 type MessageInsert = Database['public']['Tables']['messages']['Insert'];
@@ -67,6 +67,11 @@ export const messagesService = {
   },
 
   sendMessage: async (message: MessageInsert) => {
+    const online = await isOnline();
+    if (!online) {
+      await queueMutation({ table: 'messages', operation: 'insert', data: message as Record<string, unknown> });
+      return { ...message, id: `offline_${Date.now()}`, created_at: new Date().toISOString() };
+    }
     return withRetry(async () => {
       const { data, error } = await supabase
         .from('messages')

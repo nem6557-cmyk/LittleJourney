@@ -10,11 +10,13 @@ import { useAuth } from '../../context/AuthContext';
 import { forgotPasswordSchema } from '../../lib/validators';
 
 interface ForgotPasswordScreenProps {
-  onNavigateToLogin: () => void;
+  navigation?: any;
+  onNavigateToLogin?: () => void;
 }
 
-export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onNavigateToLogin }) => {
+export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation, onNavigateToLogin }) => {
   const { resetPassword } = useAuth();
+  const goToLogin = () => navigation ? navigation.navigate('Login') : onNavigateToLogin?.();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -54,7 +56,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onNa
           <Text style={styles.sentText}>
             We've sent a password reset link to <Text style={{ fontWeight: '700' }}>{email}</Text>. Please check your inbox and follow the instructions.
           </Text>
-          <TouchableOpacity style={styles.backBtn} onPress={onNavigateToLogin}>
+          <TouchableOpacity style={styles.backBtn} onPress={goToLogin}>
             <LinearGradient colors={['#667eea', '#764ba2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.backBtnGradient}>
               <Text style={styles.backBtnText}>Back to Sign In</Text>
             </LinearGradient>
@@ -73,7 +75,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onNa
           end={{ x: 1, y: 1 }}
           style={styles.header}
         >
-          <TouchableOpacity style={styles.backArrow} onPress={onNavigateToLogin}>
+          <TouchableOpacity style={styles.backArrow} onPress={goToLogin}>
             <Ionicons name="arrow-back" size={24} color={Colors.white} />
           </TouchableOpacity>
           <Ionicons name="key-outline" size={48} color={Colors.white} />
@@ -115,7 +117,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onNa
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.switchBtn} onPress={onNavigateToLogin}>
+          <TouchableOpacity style={styles.switchBtn} onPress={goToLogin}>
             <Text style={styles.switchText}>
               Remember your password? <Text style={styles.link}>Sign In</Text>
             </Text>

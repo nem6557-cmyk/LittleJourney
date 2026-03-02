@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontSizes, Shadows, Spacing } from '../theme/colors';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 
@@ -16,6 +18,7 @@ import { InviteCodeScreen } from '../screens/auth/InviteCodeScreen';
 
 // Legal screens
 import { ConsentScreen } from '../screens/legal/ConsentScreen';
+import { ResetPasswordScreen } from '../screens/auth/ResetPasswordScreen';
 
 // App screens
 import { TimelineScreen } from '../screens/parent/TimelineScreen';
@@ -25,13 +28,19 @@ import { GalleryScreen } from '../screens/parent/GalleryScreen';
 import { ProfileScreen } from '../screens/shared/ProfileScreen';
 import { CaregiverDashboard } from '../screens/caregiver/CaregiverDashboard';
 
-const Tab = createBottomTabNavigator();
+// Admin screens
+import { AdminDashboard } from '../screens/admin/AdminDashboard';
+import { ManageChildrenScreen } from '../screens/admin/ManageChildrenScreen';
+import { ManageStaffScreen } from '../screens/admin/ManageStaffScreen';
 
-type AuthScreen = 'login' | 'signup' | 'forgot-password';
+const Tab = createBottomTabNavigator();
+const AuthStack = createStackNavigator();
+const AdminStack = createStackNavigator();
 
 const tabIconMap: Record<string, { focused: keyof typeof Ionicons.glyphMap; default: keyof typeof Ionicons.glyphMap }> = {
   Home: { focused: 'home', default: 'home-outline' },
   Dashboard: { focused: 'grid', default: 'grid-outline' },
+  Admin: { focused: 'shield', default: 'shield-outline' },
   Messages: { focused: 'chatbubbles', default: 'chatbubbles-outline' },
   Report: { focused: 'document-text', default: 'document-text-outline' },
   More: { focused: 'apps', default: 'apps-outline' },
@@ -39,27 +48,24 @@ const tabIconMap: Record<string, { focused: keyof typeof Ionicons.glyphMap; defa
 };
 
 // ============================================================
-// Auth Flow (not authenticated)
+// Auth Flow (not authenticated) — proper navigation stack
 // ============================================================
 
-const AuthNavigator = () => {
-  const [currentScreen, setCurrentScreen] = useState<AuthScreen>('login');
+const AuthNavigator = () => (
+  <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+    <AuthStack.Screen name="Login" component={LoginScreen} />
+    <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+    <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+  </AuthStack.Navigator>
+);
 
-  switch (currentScreen) {
-    case 'signup':
-      return <SignUpScreen onNavigateToLogin={() => setCurrentScreen('login')} />;
-    case 'forgot-password':
-      return <ForgotPasswordScreen onNavigateToLogin={() => setCurrentScreen('login')} />;
-    case 'login':
-    default:
-      return (
-        <LoginScreen
-          onNavigateToSignUp={() => setCurrentScreen('signup')}
-          onNavigateToForgotPassword={() => setCurrentScreen('forgot-password')}
-        />
-      );
-  }
-};
+const AdminNavigator = () => (
+  <AdminStack.Navigator screenOptions={{ headerShown: false }}>
+    <AdminStack.Screen name="AdminHome" component={AdminDashboard} />
+    <AdminStack.Screen name="ManageChildren" component={ManageChildrenScreen} />
+    <AdminStack.Screen name="ManageStaff" component={ManageStaffScreen} />
+  </AdminStack.Navigator>
+);
 
 // ============================================================
 // Main App (authenticated)
@@ -71,7 +77,6 @@ const MainAppNavigator = () => {
   const currentRole = profile?.role || 'parent';
 
   return (
-    <NavigationContainer>
       <Tab.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
@@ -113,6 +118,14 @@ const MainAppNavigator = () => {
             <Tab.Screen name="More" component={GalleryScreen} />
             <Tab.Screen name="Profile" component={ProfileScreen} />
           </>
+        ) : currentRole === 'admin' ? (
+          <>
+            <Tab.Screen name="Admin" component={AdminNavigator} />
+            <Tab.Screen name="Home" component={TimelineScreen} />
+            <Tab.Screen name="Messages" component={MessagesScreen} />
+            <Tab.Screen name="More" component={GalleryScreen} />
+            <Tab.Screen name="Profile" component={ProfileScreen} />
+          </>
         ) : (
           <>
             <Tab.Screen name="Dashboard" component={CaregiverDashboard} />
@@ -123,7 +136,6 @@ const MainAppNavigator = () => {
           </>
         )}
       </Tab.Navigator>
-    </NavigationContainer>
   );
 };
 
@@ -131,8 +143,29 @@ const MainAppNavigator = () => {
 // Root Navigator
 // ============================================================
 
+const linking: any = {
+  prefixes: ['littlejourney://', 'https://littlejourney.app'],
+  config: {
+    screens: {
+      Home: 'home',
+      Messages: 'messages',
+      Report: 'report',
+      More: 'gallery',
+      Profile: 'profile',
+      Dashboard: 'dashboard',
+      Admin: {
+        screens: {
+          AdminHome: 'admin',
+          ManageChildren: 'admin/children',
+          ManageStaff: 'admin/staff',
+        },
+      },
+    },
+  },
+};
+
 export const AppNavigator = () => {
-  const { isAuthenticated, isLoading, profile, needsOnboarding, isDemoMode, updateProfile, refreshProfile, signOut, daycare } = useAuth();
+  const { isAuthenticated, isLoading, profile, needsOnboarding, isDemoMode, updateProfile, refreshProfile, signOut, daycare, isPasswordRecovery, clearPasswordRecovery } = useAuth();
 
   // Loading state while checking persisted auth
   // Also show loading if authenticated via Supabase but profile hasn't loaded yet
@@ -146,46 +179,51 @@ export const AppNavigator = () => {
     );
   }
 
-  // Not authenticated → show auth flow
-  if (!isAuthenticated) {
-    return <AuthNavigator />;
+  // Password recovery flow (from email deep link)
+  if (isPasswordRecovery) {
+    return <ResetPasswordScreen onComplete={clearPasswordRecovery} />;
   }
 
-  // Demo mode → skip onboarding checks, go straight to app
-  if (isDemoMode) {
+  // Determine which navigator to show
+  const renderContent = () => {
+    if (!isAuthenticated) {
+      return <AuthNavigator />;
+    }
+    if (isDemoMode) {
+      return <MainAppNavigator />;
+    }
+    if (needsOnboarding) {
+      return <DaycareOnboardingScreen />;
+    }
+    if (profile && !profile.daycare_id && (profile.role === 'parent' || profile.role === 'caregiver' || profile.role === 'family')) {
+      return <InviteCodeScreen />;
+    }
+    if (profile && profile.role === 'parent' && !profile.coppa_consent_at) {
+      return (
+        <ConsentScreen
+          parentName={`${profile.first_name || ''} ${profile.last_name || ''}`.trim()}
+          childName=""
+          daycareName={daycare?.name || 'Your Daycare'}
+          onConsent={async () => {
+            await updateProfile({ coppa_consent_at: new Date().toISOString() });
+            await refreshProfile();
+          }}
+          onDecline={() => {
+            signOut();
+          }}
+        />
+      );
+    }
     return <MainAppNavigator />;
-  }
+  };
 
-  // Authenticated but admin without daycare → onboarding
-  if (needsOnboarding) {
-    return <DaycareOnboardingScreen />;
-  }
-
-  // Authenticated but no daycare (parent/caregiver) → invite code
-  if (profile && !profile.daycare_id && (profile.role === 'parent' || profile.role === 'caregiver' || profile.role === 'family')) {
-    return <InviteCodeScreen />;
-  }
-
-  // Parent without COPPA consent → consent screen (fixes #9, #10)
-  if (profile && profile.role === 'parent' && !profile.coppa_consent_at) {
-    return (
-      <ConsentScreen
-        parentName={`${profile.first_name || ''} ${profile.last_name || ''}`.trim()}
-        childName=""
-        daycareName={daycare?.name || 'Your Daycare'}
-        onConsent={async () => {
-          await updateProfile({ coppa_consent_at: new Date().toISOString() });
-          await refreshProfile();
-        }}
-        onDecline={() => {
-          signOut();
-        }}
-      />
-    );
-  }
-
-  // Fully authenticated and onboarded → main app
-  return <MainAppNavigator />;
+  return (
+    <ErrorBoundary>
+      <NavigationContainer linking={linking}>
+        {renderContent()}
+      </NavigationContainer>
+    </ErrorBoundary>
+  );
 };
 
 const styles = StyleSheet.create({
