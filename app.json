@@ -48,6 +48,16 @@
     },
     "description": "A modern daycare management app connecting parents, caregivers, and administrators with real-time updates, secure messaging, and activity tracking.",
     "privacy": "unlisted",
-    "githubUrl": "https://github.com/nem6557-cmyk/LittleJourney"
+    "githubUrl": "https://github.com/nem6557-cmyk/LittleJourney",
+    "plugins": [
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "littlejourney",
+          "organization": "rochester-institute-of-tech-70"
+        }
+      ]
+    ]
   }
 }

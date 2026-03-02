@@ -18,6 +18,16 @@ export function initSentry(): void {
     tracesSampleRate: config.environment === 'production' ? 0.2 : 1.0,
     debug: config.environment === 'development',
 
+    // Wizard additions: PII, logs, session replay, feedback
+    sendDefaultPii: true,
+    enableLogs: true,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1,
+    integrations: [
+      Sentry.mobileReplayIntegration(),
+      Sentry.feedbackIntegration(),
+    ],
+
     // Filter out noisy errors
     beforeSend(event) {
       // Don't send network errors in development
