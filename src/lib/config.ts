@@ -23,8 +23,8 @@ export const config = {
   supportEmail: 'support@littlejourney.app',
   privacyEmail: 'privacy@littlejourney.app',
   legalEmail: 'legal@littlejourney.app',
-  privacyPolicyUrl: 'https://littlejourney.app/privacy',
-  termsUrl: 'https://littlejourney.app/terms',
+  privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || '/privacy.html',
+  termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || '/terms.html',
   supportUrl: 'https://littlejourney.app/support',
 
   // Feature flags

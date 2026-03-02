@@ -15,6 +15,7 @@ import { SignUpScreen } from '../screens/auth/SignUpScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { DaycareOnboardingScreen } from '../screens/auth/DaycareOnboardingScreen';
 import { InviteCodeScreen } from '../screens/auth/InviteCodeScreen';
+import { EmailVerificationScreen } from '../screens/auth/EmailVerificationScreen';
 
 // Legal screens
 import { ConsentScreen } from '../screens/legal/ConsentScreen';
@@ -32,6 +33,7 @@ import { CaregiverDashboard } from '../screens/caregiver/CaregiverDashboard';
 import { AdminDashboard } from '../screens/admin/AdminDashboard';
 import { ManageChildrenScreen } from '../screens/admin/ManageChildrenScreen';
 import { ManageStaffScreen } from '../screens/admin/ManageStaffScreen';
+import { InviteCodesScreen } from '../screens/admin/InviteCodesScreen';
 
 const Tab = createBottomTabNavigator();
 const AuthStack = createStackNavigator();
@@ -51,11 +53,19 @@ const tabIconMap: Record<string, { focused: keyof typeof Ionicons.glyphMap; defa
 // Auth Flow (not authenticated) — proper navigation stack
 // ============================================================
 
+const EmailVerificationWrapper = ({ route, navigation }: any) => (
+  <EmailVerificationScreen
+    email={route.params?.email || ''}
+    onBackToLogin={() => navigation.navigate('Login')}
+  />
+);
+
 const AuthNavigator = () => (
   <AuthStack.Navigator screenOptions={{ headerShown: false }}>
     <AuthStack.Screen name="Login" component={LoginScreen} />
     <AuthStack.Screen name="SignUp" component={SignUpScreen} />
     <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    <AuthStack.Screen name="EmailVerification" component={EmailVerificationWrapper} />
   </AuthStack.Navigator>
 );
 
@@ -64,6 +74,7 @@ const AdminNavigator = () => (
     <AdminStack.Screen name="AdminHome" component={AdminDashboard} />
     <AdminStack.Screen name="ManageChildren" component={ManageChildrenScreen} />
     <AdminStack.Screen name="ManageStaff" component={ManageStaffScreen} />
+    <AdminStack.Screen name="InviteCodes" component={InviteCodesScreen} />
   </AdminStack.Navigator>
 );
 
@@ -158,6 +169,7 @@ const linking: any = {
           AdminHome: 'admin',
           ManageChildren: 'admin/children',
           ManageStaff: 'admin/staff',
+          InviteCodes: 'admin/invites',
         },
       },
     },

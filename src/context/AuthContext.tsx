@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { Session, User as SupabaseUser, AuthError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { config } from '../lib/config';
@@ -261,8 +261,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       Alert.alert('Offline Mode', 'Password reset is not available in offline mode. Use demo login instead.');
       return { error: null };
     }
+    // Use web origin for web, deep link for native
+    const redirectTo = Platform.OS === 'web'
+      ? `${window.location.origin}`
+      : 'littlejourney://reset-password';
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'littlejourney://reset-password',
+      redirectTo,
     });
     return { error };
   }, []);

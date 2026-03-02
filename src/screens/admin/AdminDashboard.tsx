@@ -45,6 +45,10 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
   };
 
   const handleQuickAction = (label: string) => {
+    if (label === 'Invite Codes' && navigation) {
+      navigation.navigate('InviteCodes');
+      return;
+    }
     Alert.alert(label, 'This feature will be available in a future update.');
   };
 

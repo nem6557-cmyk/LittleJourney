@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
+  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { signUpSchema } from '../../lib/validators';
+import { config } from '../../lib/config';
 import type { UserRole } from '../../types';
 
 interface SignUpScreenProps {
@@ -59,11 +60,16 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNaviga
       if (error) {
         Alert.alert('Sign Up Failed', error.message);
       } else {
-        Alert.alert(
-          'Account Created!',
-          'Your account has been created successfully. Please sign in to continue.',
-          [{ text: 'Sign In', onPress: () => navigation ? navigation.navigate('Login') : onNavigateToLogin?.() }]
-        );
+        // Navigate to email verification screen
+        if (navigation) {
+          navigation.navigate('EmailVerification', { email });
+        } else {
+          Alert.alert(
+            'Check Your Email',
+            `We've sent a verification link to ${email}. Please verify your email to continue.`,
+            [{ text: 'OK', onPress: () => onNavigateToLogin?.() }]
+          );
+        }
       }
     } catch (err) {
       Alert.alert('Error', 'Something went wrong. Please try again.');
@@ -163,7 +169,10 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNaviga
               {agreeToTerms && <Ionicons name="checkmark" size={14} color={Colors.white} />}
             </View>
             <Text style={styles.checkText}>
-              I agree to the <Text style={styles.link}>Terms of Service</Text> and <Text style={styles.link}>Privacy Policy</Text>
+              I agree to the{' '}
+              <Text style={styles.link} onPress={() => Linking.openURL(config.termsUrl)}>Terms of Service</Text>
+              {' '}and{' '}
+              <Text style={styles.link} onPress={() => Linking.openURL(config.privacyPolicyUrl)}>Privacy Policy</Text>
             </Text>
           </TouchableOpacity>
           {errors.agreeToTerms && <Text style={styles.errorText}>{errors.agreeToTerms}</Text>}
