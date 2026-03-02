@@ -53,4 +53,10 @@ google-services.json
 /ios
 /android
 
+# Claude Code worktrees & artifacts
+.claude/
+
+# Windows artifacts
+nul
+
 .env.local
