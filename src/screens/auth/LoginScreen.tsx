@@ -13,8 +13,9 @@ import { loginSchema } from '../../lib/validators';
 const { width } = Dimensions.get('window');
 
 interface LoginScreenProps {
-  onNavigateToSignUp: () => void;
-  onNavigateToForgotPassword: () => void;
+  navigation?: any;
+  onNavigateToSignUp?: () => void;
+  onNavigateToForgotPassword?: () => void;
 }
 
 const onboardingSlides = [
@@ -24,7 +25,7 @@ const onboardingSlides = [
   { emoji: '📊', title: 'Daily Reports', subtitle: 'AI-generated narratives of your child\'s wonderful day', color: '#fa709a' },
 ];
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigateToSignUp, onNavigateToForgotPassword }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onNavigateToSignUp, onNavigateToForgotPassword }) => {
   const { signIn } = useAuth();
 
   const [screen, setScreen] = useState<'onboarding' | 'login'>('onboarding');
@@ -157,7 +158,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigateToSignUp, on
           {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
           {/* Forgot Password */}
-          <TouchableOpacity style={styles.forgotBtn} onPress={onNavigateToForgotPassword} accessibilityLabel="Forgot password" accessibilityRole="link">
+          <TouchableOpacity style={styles.forgotBtn} onPress={() => navigation ? navigation.navigate('ForgotPassword') : onNavigateToForgotPassword?.()} accessibilityLabel="Forgot password" accessibilityRole="link">
             <Text style={styles.forgotText}>Forgot Password?</Text>
           </TouchableOpacity>
 
@@ -174,7 +175,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigateToSignUp, on
           </TouchableOpacity>
 
           {/* Sign Up Link */}
-          <TouchableOpacity style={styles.signUpLink} onPress={onNavigateToSignUp}>
+          <TouchableOpacity style={styles.signUpLink} onPress={() => navigation ? navigation.navigate('SignUp') : onNavigateToSignUp?.()}>
             <Text style={styles.signUpLinkText}>
               Don't have an account? <Text style={styles.linkBold}>Sign Up</Text>
             </Text>

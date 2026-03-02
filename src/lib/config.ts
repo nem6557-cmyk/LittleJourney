@@ -65,3 +65,16 @@ export const config = {
 export const isDev = config.environment === 'development';
 export const isStaging = config.environment === 'staging';
 export const isProd = config.environment === 'production';
+
+// Validate required environment variables in production
+if (isProd) {
+  const required: [string, string][] = [
+    ['EXPO_PUBLIC_SUPABASE_URL', config.supabaseUrl],
+    ['EXPO_PUBLIC_SUPABASE_ANON_KEY', config.supabaseAnonKey],
+  ];
+  for (const [name, value] of required) {
+    if (!value || value.includes('placeholder') || value.includes('YOUR_')) {
+      console.error(`[Config] Missing required env var: ${name}`);
+    }
+  }
+}

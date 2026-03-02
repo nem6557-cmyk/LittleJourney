@@ -13,17 +13,17 @@ export function useMessages(userId?: string, daycareId?: string, isDemoMode = fa
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchConversations = useCallback(async () => {
-    if (isDemoMode || !daycareId) return;
+    if (isDemoMode || !userId) return;
     setIsLoading(true);
     try {
-      const data = await messagesService.getConversations(daycareId);
+      const data = await messagesService.getConversations(userId);
       setConversations(data);
     } catch (err) {
       console.error('Failed to fetch conversations:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [daycareId, isDemoMode]);
+  }, [userId, isDemoMode]);
 
   const fetchMessages = useCallback(async (conversationId: string) => {
     if (isDemoMode) return;

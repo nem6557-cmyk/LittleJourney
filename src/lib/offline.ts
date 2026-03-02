@@ -161,3 +161,32 @@ export async function clearCache(): Promise<void> {
     console.warn('Failed to clear cache:', err);
   }
 }
+
+/**
+ * Process all pending mutations by executing them against Supabase.
+ * Each successful mutation is removed from the queue.
+ * Returns the count of successfully processed mutations.
+ */
+export async function processPendingMutations(
+  executeMutation: (mutation: PendingMutation) => Promise<void>
+): Promise<number> {
+  const online = await isOnline();
+  if (!online) return 0;
+
+  const pending = await getPendingMutations();
+  if (pending.length === 0) return 0;
+
+  let processed = 0;
+  for (const mutation of pending) {
+    try {
+      await executeMutation(mutation);
+      await removePendingMutation(mutation.id);
+      processed++;
+    } catch (err) {
+      console.warn(`[Offline] Failed to sync mutation ${mutation.id}:`, err);
+      // Stop processing on first failure to preserve order
+      break;
+    }
+  }
+  return processed;
+}

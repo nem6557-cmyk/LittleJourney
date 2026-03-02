@@ -118,6 +118,78 @@ export const ProfileSkeleton = () => (
   </View>
 );
 
+export const GallerySkeleton = () => (
+  <View style={styles.container} accessibilityLabel="Loading gallery" accessibilityRole="none">
+    {/* Tab bar skeleton */}
+    <View style={{ flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.lg }}>
+      {[1, 2, 3, 4].map((i) => (
+        <SkeletonBlock key={i} width={75} height={32} borderRadius={BorderRadius.round} />
+      ))}
+    </View>
+    {/* Photo grid skeleton */}
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm }}>
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <SkeletonBlock key={i} width="31%" height={110} borderRadius={BorderRadius.md} />
+      ))}
+    </View>
+  </View>
+);
+
+export const DailyReportSkeleton = () => (
+  <View style={styles.container} accessibilityLabel="Loading daily report" accessibilityRole="none">
+    {/* Header */}
+    <SkeletonBlock width={160} height={20} style={{ marginBottom: Spacing.md }} />
+    <SkeletonBlock width={100} height={14} style={{ marginBottom: Spacing.lg }} />
+    {/* Stats row */}
+    <View style={styles.statsRow}>
+      {[1, 2, 3].map((i) => (
+        <View key={i} style={styles.statItem}>
+          <SkeletonBlock width={48} height={48} borderRadius={BorderRadius.md} />
+          <SkeletonBlock width={40} height={12} style={{ marginTop: Spacing.xs }} />
+        </View>
+      ))}
+    </View>
+    {/* Narrative block */}
+    <SkeletonBlock width="100%" height={100} borderRadius={BorderRadius.md} style={{ marginBottom: Spacing.lg }} />
+    {/* Activity entries */}
+    {[1, 2, 3].map((i) => (
+      <View key={i} style={styles.card}>
+        <View style={styles.cardHeader}>
+          <SkeletonBlock width={36} height={36} borderRadius={18} />
+          <View style={{ flex: 1, marginLeft: Spacing.md }}>
+            <SkeletonBlock width="50%" height={14} />
+            <SkeletonBlock width="30%" height={10} style={{ marginTop: Spacing.xs }} />
+          </View>
+        </View>
+      </View>
+    ))}
+  </View>
+);
+
+export const CaregiverSkeleton = () => (
+  <View style={styles.container} accessibilityLabel="Loading dashboard" accessibilityRole="none">
+    {/* Child selector */}
+    <View style={{ flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.lg }}>
+      {[1, 2, 3].map((i) => (
+        <SkeletonBlock key={i} width={64} height={64} borderRadius={32} />
+      ))}
+    </View>
+    {/* Quick actions grid */}
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.lg }}>
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <SkeletonBlock key={i} width="30%" height={80} borderRadius={BorderRadius.md} />
+      ))}
+    </View>
+    {/* Recent entries */}
+    {[1, 2].map((i) => (
+      <View key={i} style={styles.card}>
+        <SkeletonBlock width="60%" height={14} />
+        <SkeletonBlock width="90%" height={12} style={{ marginTop: Spacing.sm }} />
+      </View>
+    ))}
+  </View>
+);
+
 export { SkeletonBlock };
 
 const styles = StyleSheet.create({

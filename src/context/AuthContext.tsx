@@ -26,6 +26,7 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   needsOnboarding: boolean;
+  isPasswordRecovery: boolean;
 }
 
 interface AuthContextType extends AuthState {
@@ -47,6 +48,9 @@ interface AuthContextType extends AuthState {
   // Demo mode (for testing without Supabase)
   demoSignIn: (role: UserRole) => void;
   isDemoMode: boolean;
+
+  // Password recovery
+  clearPasswordRecovery: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -62,6 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [daycare, setDaycare] = useState<Daycare | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   const isAuthenticated = isDemoMode || !!session;
   const needsOnboarding = isAuthenticated && !isDemoMode && profile?.role === 'admin' && !profile?.daycare_id;
@@ -104,7 +109,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       // Supabase not configured — skip initialization, go straight to login screen
-      console.log('[Auth] Supabase not configured — running in offline mode. Use demo login or sign in/up to auto-enter demo mode.');
+      console.warn('[Auth] Supabase not configured — running in offline mode.');
       setIsLoading(false);
       return;
     }
@@ -140,9 +145,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
+      async (event, newSession) => {
         setSession(newSession);
         setUser(newSession?.user ?? null);
+
+        // Handle password recovery deep link
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsPasswordRecovery(true);
+        }
 
         if (newSession?.user) {
           await fetchProfile(newSession.user.id);
@@ -298,6 +308,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }) => {
     if (!user) return { daycareId: '', error: 'Not authenticated' };
 
+    // Only admins (or new users signing up as admin) can create daycares
+    if (profile && profile.role !== 'admin') {
+      return { daycareId: '', error: 'Only admin users can create a daycare' };
+    }
+
     // Create daycare
     const { data: newDaycare, error: dcError } = await supabase
       .from('daycares')
@@ -435,6 +450,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     activateDemoMode(role);
   }, [activateDemoMode]);
 
+  const clearPasswordRecovery = useCallback(() => {
+    setIsPasswordRecovery(false);
+  }, []);
+
   // ----------------------------------------------------------
   // Context value
   // ----------------------------------------------------------
@@ -447,6 +466,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     isLoading,
     isAuthenticated,
     needsOnboarding,
+    isPasswordRecovery,
     signIn,
     signUp,
     signOut,
@@ -458,10 +478,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     joinDemoDaycare,
     demoSignIn,
     isDemoMode,
+    clearPasswordRecovery,
   }), [
     session, user, profile, daycare, isLoading, isAuthenticated, needsOnboarding,
+    isPasswordRecovery,
     signIn, signUp, signOut, resetPassword, updateProfile, refreshProfile,
     createDaycare, redeemInviteCode, joinDemoDaycare, demoSignIn, isDemoMode,
+    clearPasswordRecovery,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

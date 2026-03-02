@@ -18,6 +18,7 @@ import { incidentsService } from '../services/incidents.service';
 import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
 import { registerForPushNotifications } from '../lib/notifications';
+import { onNetworkChange, processPendingMutations } from '../lib/offline';
 
 interface AppContextType {
   // Auth / role
@@ -100,6 +101,9 @@ interface AppContextType {
   // Dynamic report generation
   generateDailyNarrative: () => string;
   generateHighlights: () => string[];
+
+  // Data refresh
+  refreshData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType>({} as AppContextType);
@@ -137,6 +141,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [fetchedChildren, setFetchedChildren] = useState<Child[]>([]);
   const pushRegistered = useRef(false);
   const [supabaseDataLoaded, setSupabaseDataLoaded] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   // Sync role from AuthContext when profile is available
   useEffect(() => {
@@ -465,7 +470,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
     };
-  }, [auth.profile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.profile, refreshCounter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── refreshData: re-trigger data fetch from Supabase ──
+  const refreshData = useCallback(async () => {
+    setRefreshCounter((c) => c + 1);
+  }, []);
 
   // ── Real-time subscription for timeline_entries (fixes #17) ──
   useEffect(() => {
@@ -478,8 +488,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'timeline_entries' },
-        (payload) => {
+        async (payload) => {
           const te = payload.new as any;
+
+          // Fetch the author profile to get real name/role
+          let authorName = 'Staff';
+          let authorRole: UserRole = 'caregiver';
+          let authorEmail = '';
+          try {
+            const { data: authorProfile } = await supabase
+              .from('profiles')
+              .select('id, first_name, last_name, role, email')
+              .eq('id', te.author_id)
+              .single();
+            if (authorProfile) {
+              authorName = `${authorProfile.first_name || ''} ${authorProfile.last_name || ''}`.trim() || 'Staff';
+              authorRole = (authorProfile.role || 'caregiver') as UserRole;
+              authorEmail = authorProfile.email || '';
+            }
+          } catch {
+            // Use defaults if profile lookup fails
+          }
+
           const newEntry: TimelineEntry = {
             id: te.id,
             childId: te.child_id,
@@ -487,9 +517,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             timestamp: te.created_at,
             createdBy: {
               id: te.author_id,
-              name: 'Staff',
-              role: 'caregiver',
-              email: '',
+              name: authorName,
+              role: authorRole,
+              email: authorEmail,
             },
             title: te.title,
             description: te.description || undefined,
@@ -510,6 +540,35 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         supabase.removeChannel(channel);
       }
     };
+  }, [auth.profile]);
+
+  // ── Offline sync: process pending mutations when connectivity returns ──
+  useEffect(() => {
+    if (!auth.profile) return;
+    const unsubscribe = onNetworkChange(async (connected) => {
+      if (!connected) return;
+      try {
+        const synced = await processPendingMutations(async (mutation) => {
+          const { table, operation, data } = mutation;
+          if (operation === 'insert') {
+            const { error } = await supabase.from(table).insert(data as any);
+            if (error) throw error;
+          } else if (operation === 'update') {
+            const id = data.id as string;
+            if (!id) throw new Error('Missing id for update');
+            const { error } = await (supabase.from(table) as any).update(data).eq('id', id);
+            if (error) throw error;
+          }
+        });
+        if (synced > 0) {
+          console.warn(`[Offline] Synced ${synced} pending mutation(s)`);
+          setRefreshCounter((c) => c + 1); // Refresh data after sync
+        }
+      } catch (err) {
+        console.warn('[Offline] Sync error:', err);
+      }
+    });
+    return () => unsubscribe();
   }, [auth.profile]);
 
   // ── Reset state when user logs out (fixes #29) ──
@@ -1094,6 +1153,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       milestones, calendarEvents,
       showAlert, shareContent,
       generateDailyNarrative, generateHighlights,
+      refreshData,
     }),
     [
       isAuthenticated, isLoading, login, logout,
@@ -1112,6 +1172,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       milestones, calendarEvents,
       showAlert, shareContent,
       generateDailyNarrative, generateHighlights,
+      refreshData,
     ]
   );
 

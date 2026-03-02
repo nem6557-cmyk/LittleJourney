@@ -7,7 +7,7 @@ import { config } from './config';
  */
 export function initSentry(): void {
   if (!config.sentryDsn) {
-    console.log('Sentry DSN not configured — skipping initialization');
+    console.warn('Sentry DSN not configured — skipping initialization');
     return;
   }
 
