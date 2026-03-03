@@ -188,7 +188,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           // Parent: query parent_children joined with children
           const { data, error } = await supabase
             .from('parent_children')
-            .select('child_id, children(*)')
+            .select('child_id, children(*, classrooms(name, age_group))')
             .eq('parent_id', profile.id);
           if (!error && data) {
             childrenData = data
@@ -200,7 +200,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           if (profile.daycare_id) {
             const { data, error } = await supabase
               .from('children')
-              .select('*')
+              .select('*, classrooms(name, age_group)')
               .eq('daycare_id', profile.daycare_id);
             if (!error && data) {
               childrenData = data;
@@ -217,7 +217,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           lastName: c.last_name,
           dateOfBirth: c.date_of_birth,
           avatar: c.avatar_url || undefined,
-          classroom: c.classroom_id || undefined,
+          classroom: c.classrooms?.name || undefined,
           allergies: c.allergies || [],
           emergencyContacts: [],
           authorizedPickups: [],
