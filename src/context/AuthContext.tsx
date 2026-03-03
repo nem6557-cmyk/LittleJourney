@@ -114,24 +114,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    // Safety timeout: never stay on loading screen longer than 10s
+    // Safety timeout: never stay on loading/splash screen longer than 8s.
+    // If profile still hasn't loaded, sign out to break the deadlock and
+    // show the login screen instead of being stuck on splash forever.
     const safetyTimer = setTimeout(() => {
-      setIsLoading((current) => {
-        if (current) {
-          console.warn('[Auth] Safety timeout — forcing loading to false');
+      console.warn('[Auth] Safety timeout — forcing past splash screen');
+      setIsLoading(false);
+      // If authenticated but profile never loaded, the AppNavigator will
+      // still be stuck. Force sign-out to break the deadlock.
+      setProfile((currentProfile) => {
+        if (!currentProfile) {
+          console.warn('[Auth] No profile loaded — signing out stale session');
+          supabase.auth.signOut().catch(() => {});
+          setSession(null);
+          setUser(null);
+          setDaycare(null);
         }
-        return false;
+        return currentProfile;
       });
-    }, 10000);
+    }, 8000);
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       setSession(initialSession);
       setUser(initialSession?.user ?? null);
       if (initialSession?.user) {
-        fetchProfile(initialSession.user.id).finally(() => {
+        fetchProfile(initialSession.user.id).then((profileData) => {
           clearTimeout(safetyTimer);
           setIsLoading(false);
+          // If profile fetch returned null, sign out to avoid being stuck
+          if (!profileData) {
+            console.warn('[Auth] Profile not found — signing out');
+            supabase.auth.signOut().catch(() => {});
+            setSession(null);
+            setUser(null);
+          }
+        }).catch(() => {
+          clearTimeout(safetyTimer);
+          setIsLoading(false);
+          console.warn('[Auth] Profile fetch failed — signing out');
+          supabase.auth.signOut().catch(() => {});
+          setSession(null);
+          setUser(null);
         });
       } else {
         clearTimeout(safetyTimer);
@@ -155,7 +179,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         if (newSession?.user) {
-          await fetchProfile(newSession.user.id);
+          let profileData = await fetchProfile(newSession.user.id);
+
+          // If profile not found (e.g. DB trigger hasn't finished), retry once after a short delay
+          if (!profileData) {
+            console.warn('[Auth] Profile not found on first attempt — retrying in 2s…');
+            await new Promise((r) => setTimeout(r, 2000));
+            profileData = await fetchProfile(newSession.user.id);
+          }
+
+          // If still null after retry, sign out to break the deadlock
+          if (!profileData) {
+            console.warn('[Auth] Profile still not found after retry — signing out');
+            supabase.auth.signOut().catch(() => {});
+            setSession(null);
+            setUser(null);
+            setDaycare(null);
+          }
         } else {
           setProfile(null);
           setDaycare(null);

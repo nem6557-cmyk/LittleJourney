@@ -1,10 +1,10 @@
-import React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, FontSizes, Shadows, Spacing } from '../theme/colors';
+import { Colors, FontSizes, Shadows, Spacing, BorderRadius } from '../theme/colors';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -179,14 +179,46 @@ const linking: any = {
 export const AppNavigator = () => {
   const { isAuthenticated, isLoading, profile, needsOnboarding, isDemoMode, updateProfile, refreshProfile, signOut, daycare, isPasswordRecovery, clearPasswordRecovery } = useAuth();
 
+  // Safety: track how long we've been waiting for profile after authentication.
+  // If profile never loads within 10s, show a "Sign Out" button so the user isn't stuck.
+  const [profileTimeout, setProfileTimeout] = useState(false);
+  const waitingForProfile = isAuthenticated && !isDemoMode && !profile && !isLoading;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (waitingForProfile) {
+      timerRef.current = setTimeout(() => setProfileTimeout(true), 10000);
+    } else {
+      setProfileTimeout(false);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [waitingForProfile]);
+
   // Loading state while checking persisted auth
   // Also show loading if authenticated via Supabase but profile hasn't loaded yet
-  if (isLoading || (isAuthenticated && !isDemoMode && !profile)) {
+  if (isLoading || waitingForProfile) {
     return (
       <View style={styles.loadingContainer} accessibilityLabel="Loading app" accessibilityRole="none">
         <Text style={styles.loadingLogo}>🦋</Text>
         <Text style={styles.loadingTitle}>Little Journey</Text>
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.lg }} />
+        {profileTimeout && (
+          <View style={styles.timeoutContainer}>
+            <Text style={styles.timeoutText}>
+              Having trouble loading your profile.
+            </Text>
+            <TouchableOpacity
+              style={styles.timeoutBtn}
+              onPress={() => signOut()}
+              accessibilityLabel="Sign out and try again"
+              accessibilityRole="button"
+            >
+              <Ionicons name="log-out-outline" size={18} color={Colors.white} />
+              <Text style={styles.timeoutBtnText}>Sign Out & Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   }
@@ -259,4 +291,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   badgeText: { fontSize: 9, color: Colors.white, fontWeight: '700' },
+  timeoutContainer: {
+    marginTop: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  timeoutText: {
+    fontSize: FontSizes.md,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  timeoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  timeoutBtnText: {
+    fontSize: FontSizes.md,
+    color: Colors.white,
+    fontWeight: '700',
+  },
 });
