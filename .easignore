@@ -59,6 +59,9 @@ coverage/
 # Docs (not needed for build)
 docs/
 
+# Design / CAD sources (not part of the app build)
+*.scad
+
 # IDE
 .vscode/
 .idea/
