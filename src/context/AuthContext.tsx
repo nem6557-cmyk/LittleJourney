@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, Linking } from 'react-native';
 import { Session, User as SupabaseUser, AuthError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { config } from '../lib/config';
@@ -13,6 +13,14 @@ const isSupabaseConfigured = (): boolean => {
   const url = config.supabaseUrl;
   return !!url && !url.includes('YOUR_PROJECT_ID') && !url.includes('your-') && url.startsWith('https://');
 };
+
+/**
+ * Demo mode (fake local session, no backend) is ONLY allowed in development.
+ * A misconfigured production build must never silently fall into a fake
+ * admin/parent session — config.ts also throws in prod, but this is defense
+ * in depth at the auth boundary.
+ */
+const isDemoModeAllowed = (): boolean => __DEV__ && !isSupabaseConfigured();
 
 // ============================================================
 // Types
@@ -114,25 +122,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    // Safety timeout: never stay on loading/splash screen longer than 8s.
-    // If profile still hasn't loaded, sign out to break the deadlock and
-    // show the login screen instead of being stuck on splash forever.
+    // Safety timeout: never stay on the splash screen forever. We only stop the
+    // loading spinner here — we do NOT force sign-out, because a slow profile
+    // fetch on a poor connection is not the same as a missing profile. The
+    // genuine "authenticated but no profile" case is handled (with a retry) in
+    // the getSession + onAuthStateChange paths below, and AppNavigator shows a
+    // "Sign Out & Try Again" affordance if profile never loads.
     const safetyTimer = setTimeout(() => {
-      console.warn('[Auth] Safety timeout — forcing past splash screen');
+      console.warn('[Auth] Safety timeout — leaving splash; profile may still be loading.');
       setIsLoading(false);
-      // If authenticated but profile never loaded, the AppNavigator will
-      // still be stuck. Force sign-out to break the deadlock.
-      setProfile((currentProfile) => {
-        if (!currentProfile) {
-          console.warn('[Auth] No profile loaded — signing out stale session');
-          supabase.auth.signOut().catch(() => {});
-          setSession(null);
-          setUser(null);
-          setDaycare(null);
-        }
-        return currentProfile;
-      });
-    }, 8000);
+    }, 12000);
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
@@ -210,6 +209,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [fetchProfile]);
 
   // ----------------------------------------------------------
+  // Deep-link handler: establish a session from auth redirect URLs
+  // (password recovery + email confirmation). On native, detectSessionInUrl
+  // is off, so we must parse the URL and exchange the code ourselves.
+  // ----------------------------------------------------------
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isSupabaseConfigured()) return;
+
+    const handleUrl = async (url: string | null) => {
+      if (!url) return;
+      const isRecovery = url.includes('reset-password') || url.includes('type=recovery');
+      try {
+        // PKCE flow: ?code=... — exchange it for a session.
+        const code = url.match(/[?&]code=([^&]+)/)?.[1];
+        if (code) {
+          await supabase.auth.exchangeCodeForSession(decodeURIComponent(code));
+        } else {
+          // Implicit flow: tokens in the URL fragment (#access_token=...&refresh_token=...).
+          const hash = url.split('#')[1] ?? '';
+          const params = new URLSearchParams(hash);
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+          if (access_token && refresh_token) {
+            await supabase.auth.setSession({ access_token, refresh_token });
+          }
+        }
+        if (isRecovery) setIsPasswordRecovery(true);
+      } catch (err) {
+        console.warn('[Auth] Failed to handle auth deep link:', err);
+      }
+    };
+
+    // Cold start (app opened directly from the link).
+    Linking.getInitialURL().then(handleUrl);
+    // Warm start (app already running).
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => sub.remove();
+  }, []);
+
+  // ----------------------------------------------------------
   // Auth actions
   // ----------------------------------------------------------
 
@@ -253,8 +291,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    // When Supabase isn't configured, fall back to demo mode
-    if (!isSupabaseConfigured()) {
+    // In development only, fall back to demo mode when Supabase isn't configured.
+    if (isDemoModeAllowed()) {
       const role: UserRole = email.toLowerCase().includes('caregiver') ? 'caregiver'
         : email.toLowerCase().includes('admin') ? 'admin'
         : 'parent';
@@ -271,17 +309,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     password: string,
     metadata: { first_name: string; last_name: string; role: UserRole }
   ) => {
-    // When Supabase isn't configured, fall back to demo mode
-    if (!isSupabaseConfigured()) {
+    // In development only, fall back to demo mode when Supabase isn't configured.
+    if (isDemoModeAllowed()) {
       activateDemoMode(metadata.role);
       return { error: null };
     }
     setIsDemoMode(false);
+    const emailRedirectTo = Platform.OS === 'web' ? window.location.origin : 'littlejourney://';
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: metadata, // Stored in raw_user_meta_data, used by handle_new_user trigger
+        data: metadata, // Stored in raw_user_meta_data (only first/last name are trusted server-side)
+        // Return the user to the app after they tap the confirmation link.
+        emailRedirectTo,
       },
     });
     return { error };
@@ -357,39 +398,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return { daycareId: '', error: 'Only admin users can create a daycare' };
     }
 
-    // Create daycare
-    const { data: newDaycare, error: dcError } = await supabase
-      .from('daycares')
-      .insert(data)
-      .select()
-      .single();
-
-    if (dcError || !newDaycare) {
-      return { daycareId: '', error: dcError?.message || 'Failed to create daycare' };
-    }
-
-    // Link user to daycare
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ daycare_id: newDaycare.id, role: 'admin' })
-      .eq('id', user.id);
-
-    if (profileError) {
-      return { daycareId: newDaycare.id, error: 'Daycare created but failed to link profile' };
-    }
-
-    // Create default subscription (trial)
-    await supabase.from('subscriptions').insert({
-      daycare_id: newDaycare.id,
-      plan_tier: 'starter',
-      status: 'trialing',
-      current_period_end: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    // Atomic server-side creation (daycare + profile link + trial subscription).
+    // Done via RPC because the profiles WITH CHECK policy now blocks changing
+    // role/daycare_id through a direct client UPDATE.
+    const { data: result, error: rpcError } = await supabase.rpc('create_daycare', {
+      p_name: data.name,
+      p_address: data.address ?? null,
+      p_city: data.city ?? null,
+      p_state: data.state ?? null,
+      p_zip: data.zip ?? null,
+      p_phone: data.phone ?? null,
+      p_email: data.email ?? null,
     });
+
+    if (rpcError) {
+      return { daycareId: '', error: rpcError.message || 'Failed to create daycare' };
+    }
+    if (result?.error) {
+      return { daycareId: '', error: result.error as string };
+    }
 
     // Refresh profile to pick up daycare_id
     await fetchProfile(user.id);
 
-    return { daycareId: newDaycare.id, error: null };
+    return { daycareId: (result?.daycare_id as string) || '', error: null };
   }, [user, fetchProfile]);
 
   // ----------------------------------------------------------
@@ -399,60 +431,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const redeemInviteCode = useCallback(async (code: string) => {
     if (!user) return { error: 'Not authenticated' };
 
-    // Look up the invite code
-    const { data: invite, error: lookupError } = await supabase
-      .from('invite_codes')
-      .select('*')
-      .eq('code', code.toUpperCase())
-      .is('used_by', null)
-      .gt('expires_at', new Date().toISOString())
-      .single();
+    // Redemption runs server-side (SECURITY DEFINER RPC): it validates the
+    // exact code, marks it used, and links the profile + role atomically.
+    // The client can no longer enumerate codes or pick its own role.
+    const { data, error: rpcError } = await supabase.rpc('redeem_invite_code', {
+      p_code: code.toUpperCase(),
+    });
 
-    if (lookupError || !invite) {
-      return { error: 'Invalid or expired invite code' };
-    }
-
-    // Mark code as used
-    const { error: redeemError } = await supabase
-      .from('invite_codes')
-      .update({ used_by: user.id, used_at: new Date().toISOString() })
-      .eq('id', invite.id);
-
-    if (redeemError) {
+    if (rpcError) {
       return { error: 'Failed to redeem invite code' };
     }
-
-    // Link user to daycare with the specified role
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        daycare_id: invite.daycare_id,
-        role: invite.role as any,
-      })
-      .eq('id', user.id);
-
-    if (profileError) {
-      return { error: 'Failed to link to daycare' };
+    if (data?.error) {
+      return { error: data.error as string };
     }
 
-    // If parent invite with a child_id, create parent-child link
-    if (invite.role === 'parent' && invite.child_id) {
-      await supabase.from('parent_children').insert({
-        parent_id: user.id,
-        child_id: invite.child_id,
-        relationship: 'parent',
-      });
-    }
-
-    // If caregiver invite with a classroom_id, create assignment
-    if (invite.role === 'caregiver' && invite.classroom_id) {
-      await supabase.from('caregiver_classrooms').insert({
-        caregiver_id: user.id,
-        classroom_id: invite.classroom_id,
-      });
-    }
-
-    // Refresh
+    // Refresh local profile to pick up the new daycare/role.
     await fetchProfile(user.id);
 
     return { error: null };

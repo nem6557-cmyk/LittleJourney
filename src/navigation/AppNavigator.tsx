@@ -57,6 +57,9 @@ const EmailVerificationWrapper = ({ route, navigation }: any) => (
   <EmailVerificationScreen
     email={route.params?.email || ''}
     onBackToLogin={() => navigation.navigate('Login')}
+    // Once verified, return to Login; if a session was established the root
+    // navigator switches to the authenticated app automatically.
+    onVerified={() => navigation.navigate('Login')}
   />
 );
 
@@ -121,7 +124,15 @@ const MainAppNavigator = () => {
           },
         })}
       >
-        {currentRole === 'parent' || currentRole === 'family' || currentRole === 'pediatrician' ? (
+        {currentRole === 'pediatrician' ? (
+          // Pediatricians get a scoped, read-only view: child timeline + profile
+          // only — no billing, family network, or messaging.
+          <>
+            <Tab.Screen name="Home" component={TimelineScreen} />
+            <Tab.Screen name="Report" component={DailyReportScreen} />
+            <Tab.Screen name="Profile" component={ProfileScreen} />
+          </>
+        ) : currentRole === 'parent' || currentRole === 'family' ? (
           <>
             <Tab.Screen name="Home" component={TimelineScreen} />
             <Tab.Screen name="Messages" component={MessagesScreen} />
@@ -242,7 +253,7 @@ export const AppNavigator = () => {
     if (profile && !profile.daycare_id && (profile.role === 'parent' || profile.role === 'caregiver' || profile.role === 'family')) {
       return <InviteCodeScreen />;
     }
-    if (profile && profile.role === 'parent' && !profile.coppa_consent_at) {
+    if (profile && (profile.role === 'parent' || profile.role === 'family') && !profile.coppa_consent_at) {
       return (
         <ConsentScreen
           parentName={`${profile.first_name || ''} ${profile.last_name || ''}`.trim()}

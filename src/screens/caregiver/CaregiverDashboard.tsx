@@ -166,12 +166,13 @@ export const CaregiverDashboard = () => {
       let details: Record<string, any> = {};
 
       switch (selectedAction.type) {
-        case 'meal':
+        case 'meal': {
           title = selectedMealType;
           const items = mealItems.split(',').map((s) => s.trim()).filter(Boolean);
           details = { mealType: selectedMealType.toLowerCase(), amount: selectedAmount.toLowerCase(), items: items.length > 0 ? items : undefined };
           if (!description) description = `${selectedMealType}${items.length > 0 ? ` — ${items.join(', ')}` : ''} — ate ${selectedAmount.toLowerCase()}.`;
           break;
+        }
         case 'nap':
           title = napAction === 'sleeping' ? 'Nap Time Started' : 'Woke Up from Nap';
           details = { status: napAction };
@@ -253,7 +254,7 @@ export const CaregiverDashboard = () => {
     setIncidentLocation('');
     setIncidentDesc('');
     setIncidentAction('');
-    showAlert('Incident Reported', `Incident report filed for ${selectedChild.firstName}. Parent has been notified.`);
+    showAlert('Incident Reported', `Incident report filed for ${selectedChild.firstName}. The parent will be notified.`);
   };
 
   const handleCheckOut = () => {
@@ -410,6 +411,9 @@ export const CaregiverDashboard = () => {
                 key={option.mood}
                 style={[styles.moodChip, selectedMood === option.mood && styles.moodChipActive]}
                 onPress={() => {
+                  // Guard against spammable taps: only log when the mood actually changes,
+                  // so rapid repeated taps on the same chip don't create duplicate entries.
+                  if (selectedMood === option.mood) return;
                   setSelectedMood(option.mood);
                   addTimelineEntry({ childId: selectedChild.id, type: 'mood', title: `Mood: ${option.label}`, mood: option.mood });
                 }}

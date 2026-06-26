@@ -23,8 +23,9 @@ export const config = {
   supportEmail: 'support@littlejourney.app',
   privacyEmail: 'privacy@littlejourney.app',
   legalEmail: 'legal@littlejourney.app',
-  privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || '/privacy.html',
-  termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || '/terms.html',
+  // Absolute https URLs so they can open on native (a relative path has no origin).
+  privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || 'https://littlejourney.app/privacy',
+  termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://littlejourney.app/terms',
   supportUrl: 'https://littlejourney.app/support',
 
   // Feature flags
@@ -66,15 +67,21 @@ export const isDev = config.environment === 'development';
 export const isStaging = config.environment === 'staging';
 export const isProd = config.environment === 'production';
 
-// Validate required environment variables in production
+// Validate required environment variables in production. A misconfigured prod
+// build must fail fast rather than silently fall back to fake demo mode (which
+// would let anyone "sign in" with no backend).
 if (isProd) {
   const required: [string, string][] = [
     ['EXPO_PUBLIC_SUPABASE_URL', config.supabaseUrl],
     ['EXPO_PUBLIC_SUPABASE_ANON_KEY', config.supabaseAnonKey],
   ];
-  for (const [name, value] of required) {
-    if (!value || value.includes('placeholder') || value.includes('YOUR_')) {
-      console.error(`[Config] Missing required env var: ${name}`);
-    }
+  const missing = required
+    .filter(([, value]) => !value || value.includes('placeholder') || value.includes('YOUR_'))
+    .map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(
+      `[Config] Production build is missing required env var(s): ${missing.join(', ')}. ` +
+        'Set them via EAS secrets / eas.json before building for production.',
+    );
   }
 }

@@ -27,8 +27,6 @@ export const MessagesScreen = () => {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [messageFilter, setMessageFilter] = useState<'all' | 'unread' | 'urgent'>('all');
-  const [callModal, setCallModal] = useState<null | 'voice' | 'video'>(null);
-  const [callTimer, setCallTimer] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Track screen view on mount (#34)
@@ -49,21 +47,6 @@ export const MessagesScreen = () => {
     }
   }, [messages, activeConversationId]);
 
-  // Call timer
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (callModal) {
-      setCallTimer(0);
-      interval = setInterval(() => setCallTimer((t) => t + 1), 1000);
-    }
-    return () => { if (interval) clearInterval(interval); };
-  }, [callModal]);
-
-  const formatCallTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
 
   const handleSend = () => {
     if (!inputText.trim() || !activeConversationId) return;
@@ -300,18 +283,6 @@ export const MessagesScreen = () => {
           <Text style={styles.chatHeaderName} numberOfLines={1}>{partnerName}</Text>
           <Text style={styles.chatHeaderMeta}>{partnerSubtitle}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.headerAction}
-          onPress={() => setCallModal('voice')}
-        >
-          <Ionicons name="call-outline" size={20} color={Colors.white} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.headerAction}
-          onPress={() => setCallModal('video')}
-        >
-          <Ionicons name="videocam-outline" size={20} color={Colors.white} />
-        </TouchableOpacity>
       </LinearGradient>
 
       {/* Messages */}
@@ -479,62 +450,6 @@ export const MessagesScreen = () => {
           )}
         </View>
       </KeyboardAvoidingView>
-
-      {/* Call / Video Call Modal */}
-      <Modal visible={callModal !== null} animationType="fade" transparent>
-        <View style={styles.callOverlay}>
-          <LinearGradient
-            colors={callModal === 'video' ? ['#4facfe', '#00f2fe'] : ['#667eea', '#764ba2']}
-            style={styles.callScreen}
-          >
-            <View style={styles.callInfo}>
-              {callModal === 'video' && (
-                <View style={styles.callVideoIcon}>
-                  <Ionicons name="videocam" size={32} color={Colors.white} />
-                </View>
-              )}
-              <View style={styles.callAvatar}>
-                <Text style={styles.callAvatarText}>{partnerInitial}</Text>
-              </View>
-              <Text style={styles.callName}>{partnerName}</Text>
-              <Text style={styles.callType}>{callModal === 'video' ? 'Video Call' : 'Voice Call'}</Text>
-              <Text style={styles.callTimerText}>{formatCallTime(callTimer)}</Text>
-            </View>
-            <View style={styles.callActions}>
-              {callModal === 'voice' && (
-                <>
-                  <TouchableOpacity style={styles.callActionBtn}>
-                    <Ionicons name="mic-off-outline" size={24} color={Colors.white} />
-                    <Text style={styles.callActionLabel}>Mute</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.callActionBtn}>
-                    <Ionicons name="volume-high-outline" size={24} color={Colors.white} />
-                    <Text style={styles.callActionLabel}>Speaker</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-              {callModal === 'video' && (
-                <>
-                  <TouchableOpacity style={styles.callActionBtn}>
-                    <Ionicons name="mic-off-outline" size={24} color={Colors.white} />
-                    <Text style={styles.callActionLabel}>Mute</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.callActionBtn}>
-                    <Ionicons name="camera-reverse-outline" size={24} color={Colors.white} />
-                    <Text style={styles.callActionLabel}>Flip</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-              <TouchableOpacity
-                style={styles.callEndBtn}
-                onPress={() => setCallModal(null)}
-              >
-                <Ionicons name="call" size={28} color={Colors.white} style={{ transform: [{ rotate: '135deg' }] }} />
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
-        </View>
-      </Modal>
     </View>
   );
 };

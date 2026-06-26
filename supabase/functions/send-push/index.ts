@@ -23,10 +23,19 @@ interface PushMessage {
 
 serve(async (req) => {
   try {
-    // Verify the request is authorized (either from Supabase webhook or authenticated user)
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      // If called directly by a client, verify the JWT
+    // Authorize the request: it must come from EITHER an internal Supabase
+    // webhook (carrying the shared secret) OR an authenticated staff user.
+    // Anything else is rejected — never send pushes for an unauthenticated caller.
+    const webhookSecret = Deno.env.get('PUSH_WEBHOOK_SECRET');
+    const providedSecret = req.headers.get('x-webhook-secret');
+    const isInternalWebhook = !!webhookSecret && providedSecret === webhookSecret;
+
+    if (!isInternalWebhook) {
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+      }
+      // Verify the JWT for a client-initiated call
       const token = authHeader.replace('Bearer ', '');
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
       if (authError || !user) {
@@ -42,7 +51,6 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Forbidden: staff only' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
       }
     }
-    // If no auth header, allow if called from Supabase webhook (internal)
 
     const { record } = await req.json();
 

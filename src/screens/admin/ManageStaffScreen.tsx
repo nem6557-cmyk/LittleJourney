@@ -112,14 +112,13 @@ export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation
       setShowInviteModal(false);
       setInviteEmail('');
     } catch (err: any) {
-      // If invitations table doesn't exist yet, show a graceful message
+      // If the invitations table doesn't exist (or is inaccessible), the invite
+      // was NOT saved — report an honest failure rather than implying success.
       if (err.code === '42P01' || err.message?.includes('relation')) {
         Alert.alert(
-          'Invite Noted',
-          `Invitation for ${inviteEmail} recorded. The invitation system will be fully activated once the invitations table is set up.`
+          'Could Not Send Invite',
+          'The invitation system is not set up yet, so this invite could not be saved. Please try again once the invitations table is configured.'
         );
-        setShowInviteModal(false);
-        setInviteEmail('');
       } else {
         Alert.alert('Error', err.message || 'Failed to send invitation.');
       }

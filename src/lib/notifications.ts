@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { config } from './config';
@@ -42,20 +43,28 @@ export async function registerForPushNotifications(userId?: string): Promise<str
     return null;
   }
 
-  // Get Expo push token
-  const projectId = process.env.EAS_PROJECT_ID || process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '65cb7e55-095b-440f-9340-dfe489247b67';
-  const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId,
-  });
+  // Get Expo push token. projectId comes from the resolved Expo config
+  // (extra.eas.projectId) — the single source of truth — never a hardcoded UUID.
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ||
+    (Constants.easConfig as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) {
+    console.warn('[notifications] No EAS projectId configured; cannot register for push.');
+    return null;
+  }
+  const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
 
   const token = tokenData.data;
 
   // Save token to user profile in Supabase
   if (userId && token) {
-    await supabase
+    const { error } = await supabase
       .from('profiles')
       .update({ push_token: token })
       .eq('id', userId);
+    if (error) {
+      console.warn('[notifications] Failed to save push token:', error.message);
+    }
   }
 
   // Android notification channels

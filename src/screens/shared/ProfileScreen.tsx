@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
@@ -12,11 +13,15 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { trackScreen } from '../../lib/analytics';
+import { PaymentMethodsScreen } from '../payments/PaymentMethodsScreen';
+import { SubscriptionScreen } from '../payments/SubscriptionScreen';
 
 const PREFS_STORAGE_KEY = '@littlejourney/user_preferences';
 
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
+
 type SubScreen = null | 'child_profile' | 'family' | 'pickups' | 'health' | 'invoices' | 'invoice_detail' | 'notifications' | 'about'
-  | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'lesson_plans' | 'incidents';
+  | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'subscription' | 'lesson_plans' | 'incidents';
 
 interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
@@ -89,7 +94,9 @@ export const ProfileScreen = () => {
           if (prefs.autoPayEnabled !== undefined) setAutoPayEnabled(prefs.autoPayEnabled);
           if (prefs.autoPayDay !== undefined) setAutoPayDay(prefs.autoPayDay);
         }
-      } catch {}
+      } catch {
+        // Preferences are non-critical; fall back to defaults if load fails.
+      }
     })();
   }, []);
 
@@ -102,7 +109,9 @@ export const ProfileScreen = () => {
         selectedLanguage, autoTranslate, targetLanguage,
         autoPayEnabled, autoPayDay,
       }));
-    } catch {}
+    } catch {
+      // Best-effort persistence; a failed write is non-fatal.
+    }
   }, [smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
       photoSharing, classPhotos, analyticsSharing,
       selectedLanguage, autoTranslate, targetLanguage,
@@ -181,7 +190,7 @@ export const ProfileScreen = () => {
       items: [
         { icon: 'card-outline', label: 'Payment Methods', subtitle: paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file', sub: 'payment_methods' },
         { icon: 'receipt-outline', label: 'Invoices & Receipts', subtitle: pendingAmount > 0 ? `$${pendingAmount.toFixed(2)} pending` : 'All paid', sub: 'invoices' },
-        { icon: 'document-text-outline', label: 'Tax Documents', subtitle: '2025 tax receipt available' },
+        { icon: 'star-outline', label: 'Subscription', subtitle: 'Manage your plan', sub: 'subscription' },
       ],
     },
     {
@@ -199,9 +208,9 @@ export const ProfileScreen = () => {
     {
       title: 'Classroom',
       items: [
-        { icon: 'people-outline', label: selectedChild.classroom || 'Classroom', subtitle: '8 children enrolled' },
+        { icon: 'people-outline', label: selectedChild.classroom || 'Classroom', subtitle: 'View classroom details' },
         { icon: 'calendar-outline', label: 'Attendance', subtitle: 'View from Dashboard' },
-        { icon: 'book-outline', label: 'Lesson Plans', subtitle: 'This week: Colors & Numbers', sub: 'lesson_plans' },
+        { icon: 'book-outline', label: 'Lesson Plans', subtitle: 'View weekly plans', sub: 'lesson_plans' },
         { icon: 'clipboard-outline', label: 'Reports', subtitle: 'Generate daily reports' },
       ],
     },
@@ -366,7 +375,15 @@ export const ProfileScreen = () => {
                   </View>
                   <TouchableOpacity
                     style={styles.saveButton}
-                    onPress={() => showAlert('Auto-Pay Saved', `Invoices will be automatically paid on the ${autoPayDay}${autoPayDay === 1 ? 'st' : autoPayDay === 5 ? 'th' : 'th'} of each month.`)}
+                    onPress={async () => {
+                      await savePreferences();
+                      showAlert(
+                        'Auto-Pay Preference Saved',
+                        autoPayEnabled
+                          ? `Your auto-pay preference (day ${autoPayDay} of each month) has been saved.`
+                          : 'Auto-pay is turned off.'
+                      );
+                    }}
                   >
                     <Text style={styles.saveButtonText}>Save Auto-Pay Settings</Text>
                   </TouchableOpacity>
@@ -412,11 +429,15 @@ export const ProfileScreen = () => {
               <TouchableOpacity
                 style={styles.payButton}
                 onPress={() => {
-                  Alert.alert('Confirm Payment', `Pay $${selectedInvoice.amount.toFixed(2)}${paymentCard ? ` with ${paymentCard.type} ending in ${paymentCard.last4}` : ''}?`, [
+                  Alert.alert('Pay Invoice', `Continue to securely pay $${selectedInvoice.amount.toFixed(2)} via Stripe?`, [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Pay Now', onPress: () => {
-                      payInvoice(selectedInvoice.id);
-                      showAlert('Payment Successful', `$${selectedInvoice.amount.toFixed(2)} has been paid.`);
+                    { text: 'Continue', onPress: async () => {
+                      const { error } = await payInvoice(selectedInvoice.id);
+                      if (error) {
+                        showAlert('Payment Unavailable', error);
+                      } else {
+                        showAlert('Opening Secure Checkout', 'Complete your payment in the page that just opened. Your invoice updates automatically once payment is confirmed.');
+                      }
                     }},
                   ]);
                 }}
@@ -444,7 +465,7 @@ export const ProfileScreen = () => {
             <View style={{ alignItems: 'center', marginBottom: Spacing.xl }}>
               <Text style={{ fontSize: 48, marginBottom: Spacing.md }}>🦋</Text>
               <Text style={{ fontSize: FontSizes.xxl, fontWeight: '800', color: Colors.primary }}>Little Journey</Text>
-              <Text style={{ fontSize: FontSizes.sm, color: Colors.textMuted, marginTop: 4 }}>Version 1.0.0</Text>
+              <Text style={{ fontSize: FontSizes.sm, color: Colors.textMuted, marginTop: 4 }}>Version {APP_VERSION}</Text>
             </View>
             <Text style={{ fontSize: FontSizes.md, color: Colors.textSecondary, lineHeight: 24, marginBottom: Spacing.lg }}>
               Little Journey is a childcare communication app that keeps parents connected with their child's daily experiences. From real-time activity updates and milestone tracking to secure messaging and daily reports — everything you need in one place.
@@ -769,30 +790,10 @@ export const ProfileScreen = () => {
           </View>
         );
       case 'payment_methods':
-        return (
-          <View>
-            <Text style={styles.subTitle}>Payment Methods</Text>
-            <View style={styles.savedCardRow}>
-              <View style={styles.savedCardIcon}>
-                <Ionicons name="card" size={24} color={Colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.prefLabel}>{paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file'}</Text>
-                <Text style={styles.prefDesc}>{paymentCard ? 'Default payment method' : 'Add a payment method to get started'}</Text>
-              </View>
-              {paymentCard && (
-                <View style={[styles.verifiedBadge, { backgroundColor: Colors.successLight }]}>
-                  <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-                  <Text style={{ fontSize: FontSizes.xs, color: Colors.success, fontWeight: '600' }}>Active</Text>
-                </View>
-              )}
-            </View>
-            <TouchableOpacity style={styles.addButton} onPress={() => showAlert('Add Card', 'Card entry form would appear here with Stripe/payment integration.')}>
-              <Ionicons name="add-circle-outline" size={18} color={Colors.primary} />
-              <Text style={styles.addButtonText}>Add Payment Method</Text>
-            </TouchableOpacity>
-          </View>
-        );
+        // Real Stripe SetupIntent-backed card management.
+        return <PaymentMethodsScreen onClose={() => setSubScreen(null)} />;
+      case 'subscription':
+        return <SubscriptionScreen type={currentRole === 'admin' ? 'daycare' : 'parent'} onClose={() => setSubScreen(null)} />;
       case 'lesson_plans':
         return (
           <View>
@@ -967,7 +968,7 @@ export const ProfileScreen = () => {
 
         <TouchableOpacity style={styles.appInfo} onPress={() => setSubScreen('about')}>
           <Text style={styles.appName}>Little Journey</Text>
-          <Text style={styles.appVersion}>Version 1.0.0</Text>
+          <Text style={styles.appVersion}>Version {APP_VERSION}</Text>
           <Text style={styles.appTagline}>A living journal of your child's day</Text>
           <View style={styles.badges}>
             <View style={styles.badge}>

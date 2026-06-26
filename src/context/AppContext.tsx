@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef, ReactNode } from 'react';
-import { Alert, Share, Platform } from 'react-native';
+import { Alert, Share, Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   UserRole, User, TimelineEntry, Message, Child, MoodType, Conversation,
@@ -17,6 +17,7 @@ import { messagesService } from '../services/messages.service';
 import { incidentsService } from '../services/incidents.service';
 import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
+import { attendanceService } from '../services/attendance.service';
 import { registerForPushNotifications, dispatchPushNotification } from '../lib/notifications';
 import { onNetworkChange, processPendingMutations } from '../lib/offline';
 
@@ -24,6 +25,8 @@ interface AppContextType {
   // Auth / role
   isAuthenticated: boolean;
   isLoading: boolean;
+  dataLoading: boolean;
+  dataError: string | null;
   login: (role: UserRole) => void;
   logout: () => void;
   currentRole: UserRole;
@@ -85,7 +88,7 @@ interface AppContextType {
 
   // Invoices
   invoices: Invoice[];
-  payInvoice: (invoiceId: string) => void;
+  payInvoice: (invoiceId: string) => Promise<{ error: string | null }>;
 
   // Learning Plans
   learningPlans: LearningPlan[];
@@ -123,6 +126,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const auth = useAuth();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  // Tracks the live Supabase fetch (distinct from the legacy AsyncStorage
+  // isLoading) so screens show skeletons while real data loads and an error
+  // state if the fetch fails, rather than a premature "No data yet".
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>('parent');
   const [selectedChildId, setSelectedChildId] = useState('child1');
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
@@ -176,6 +184,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     let cancelled = false;
+    setDataLoading(true);
+    setDataError(null);
 
     const fetchSupabaseData = async () => {
       try {
@@ -485,7 +495,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       } catch (err) {
         console.error('[AppContext] Error fetching Supabase data:', err);
-        // On error, keep sample data as fallback
+        if (!cancelled) {
+          setDataError(err instanceof Error ? err.message : 'Could not load your data.');
+        }
+      } finally {
+        if (!cancelled) setDataLoading(false);
       }
     };
 
@@ -494,7 +508,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
     };
-  }, [auth.profile, refreshCounter]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Intentionally re-runs only when the signed-in profile or the manual
+    // refresh counter changes — not on every referenced setter/value.
+  }, [auth.profile, refreshCounter]);
 
   // ── refreshData: re-trigger data fetch from Supabase ──
   const refreshData = useCallback(async () => {
@@ -503,7 +519,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // ── Real-time subscription for timeline_entries (fixes #17) ──
   useEffect(() => {
-    if (!auth.profile) return;
+    if (!auth.profile?.daycare_id) return;
+    const daycareId = auth.profile.daycare_id;
 
     let channel: RealtimeChannel | null = null;
 
@@ -511,7 +528,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       .channel('timeline-realtime')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'timeline_entries' },
+        // Scope to the user's own daycare — don't receive every tenant's inserts.
+        { event: 'INSERT', schema: 'public', table: 'timeline_entries', filter: `daycare_id=eq.${daycareId}` },
         async (payload) => {
           const te = payload.new as any;
 
@@ -636,46 +654,53 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [auth.profile]);
 
-  // ── Offline sync: process pending mutations when connectivity returns ──
+  // ── Offline sync: replay any queued mutations ──
+  const flushPendingMutations = useCallback(async () => {
+    try {
+      const synced = await processPendingMutations(async (mutation) => {
+        const { table, operation, data } = mutation;
+        if (operation === 'insert') {
+          // Remove offline-prefixed IDs before inserting
+          const insertData = { ...data };
+          if (typeof insertData.id === 'string' && insertData.id.startsWith('offline_')) {
+            delete insertData.id;
+          }
+          const { error } = await supabase.from(table).insert(insertData as any);
+          if (error) throw error;
+        } else if (operation === 'update') {
+          const id = data.id as string;
+          if (!id) throw new Error('Missing id for update');
+          const updateData = { ...data };
+          delete updateData.id; // Don't update the primary key
+          const { error } = await (supabase.from(table) as any).update(updateData).eq('id', id);
+          if (error) throw error;
+        } else if (operation === 'delete') {
+          const id = data.id as string;
+          if (!id) throw new Error('Missing id for delete');
+          const { error } = await supabase.from(table).delete().eq('id', id);
+          if (error) throw error;
+        }
+      });
+      if (synced > 0) {
+        console.warn(`[Offline] Synced ${synced} pending mutation(s)`);
+        setRefreshCounter((c) => c + 1); // Refresh data after sync
+      }
+    } catch (err) {
+      console.warn('[Offline] Sync error:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (!auth.profile) return;
-    const unsubscribe = onNetworkChange(async (connected) => {
-      if (!connected) return;
-      try {
-        const synced = await processPendingMutations(async (mutation) => {
-          const { table, operation, data } = mutation;
-          if (operation === 'insert') {
-            // Remove offline-prefixed IDs before inserting
-            const insertData = { ...data };
-            if (typeof insertData.id === 'string' && insertData.id.startsWith('offline_')) {
-              delete insertData.id;
-            }
-            const { error } = await supabase.from(table).insert(insertData as any);
-            if (error) throw error;
-          } else if (operation === 'update') {
-            const id = data.id as string;
-            if (!id) throw new Error('Missing id for update');
-            const updateData = { ...data };
-            delete updateData.id; // Don't update the primary key
-            const { error } = await (supabase.from(table) as any).update(updateData).eq('id', id);
-            if (error) throw error;
-          } else if (operation === 'delete') {
-            const id = data.id as string;
-            if (!id) throw new Error('Missing id for delete');
-            const { error } = await supabase.from(table).delete().eq('id', id);
-            if (error) throw error;
-          }
-        });
-        if (synced > 0) {
-          console.warn(`[Offline] Synced ${synced} pending mutation(s)`);
-          setRefreshCounter((c) => c + 1); // Refresh data after sync
-        }
-      } catch (err) {
-        console.warn('[Offline] Sync error:', err);
-      }
+    // Flush once on startup — covers the case where the app was closed offline
+    // and reopened while already online (no connectivity-change event fires).
+    flushPendingMutations();
+    // And flush whenever connectivity is (re)gained.
+    const unsubscribe = onNetworkChange((connected) => {
+      if (connected) flushPendingMutations();
     });
     return () => unsubscribe();
-  }, [auth.profile]);
+  }, [auth.profile, flushPendingMutations]);
 
   // ── Reset state when user logs out (fixes #29) ──
   useEffect(() => {
@@ -944,7 +969,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const sendMessage = useCallback(
     (text: string, isUrgent = false, conversationId?: string) => {
-      const convId = conversationId || activeConversationId || 'conv1';
+      const convId = conversationId || activeConversationId;
+      // Without a real conversation the DB insert would fail the FK/UUID format
+      // and the message would be silently lost. Require a valid conversation.
+      if (!convId) {
+        console.warn('[AppContext] sendMessage called with no active conversation; ignoring.');
+        return;
+      }
       const tempId = `m${Date.now()}`;
       const newMsg: Message = {
         id: tempId,
@@ -991,8 +1022,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
       );
+      // Persist so unread counts stay correct across refetch / other devices.
+      if (auth.profile) {
+        messagesService
+          .markRead(convId, auth.profile.id)
+          .catch((err) => console.warn('[AppContext] Failed to persist read state:', err));
+      }
     }
-  }, [currentUser.id, activeConversationId]);
+  }, [currentUser.id, activeConversationId, auth.profile]);
 
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationId(id);
@@ -1012,7 +1049,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       description: desc,
       details: { method: 'Manual', person: currentUser.name },
     });
-    // Update attendance
+    // Update attendance (optimistic)
     const now = new Date();
     setAttendance((prev) =>
       prev.map((a) => {
@@ -1023,8 +1060,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         return { ...a, checkInTime: now.toISOString(), status: 'present' };
       })
     );
+
+    // Persist to Supabase so attendance survives refetch and is visible to others.
+    if (auth.profile?.daycare_id) {
+      const today = now.toISOString().split('T')[0];
+      const persist = isCheckedIn
+        ? attendanceService.checkOut(selectedChild.id, today, auth.profile.id)
+        : attendanceService.checkIn({
+            child_id: selectedChild.id,
+            daycare_id: auth.profile.daycare_id,
+            date: today,
+            status: 'present',
+            check_in_at: now.toISOString(),
+            check_in_by: auth.profile.id,
+          });
+      persist.catch((err) => console.warn('[AppContext] Failed to persist attendance:', err));
+    }
+
     setIsCheckedIn((prev) => !prev);
-  }, [isCheckedIn, selectedChild, addTimelineEntry, currentUser.name]);
+  }, [isCheckedIn, selectedChild, addTimelineEntry, currentUser.name, auth.profile]);
 
   // ── Notifications ──
   const unreadNotificationCount = useMemo(
@@ -1103,26 +1157,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // ── Invoices ──
-  const payInvoice = useCallback((invoiceId: string) => {
-    const now = new Date().toISOString();
-    setInvoices((prev) =>
-      prev.map((inv) =>
-        inv.id === invoiceId
-          ? { ...inv, status: 'paid' as const, paidDate: now.split('T')[0] }
-          : inv
-      )
-    );
-    // Persist to Supabase
-    if (auth.profile) {
-      supabase
-        .from('invoices')
-        .update({ status: 'paid', paid_at: now })
-        .eq('id', invoiceId)
-        .then(({ error }) => {
-          if (error) console.warn('[AppContext] Failed to persist invoice payment:', error);
-        });
+  // Payment goes through Stripe: the create-invoice edge function finalizes a
+  // hosted Stripe invoice and returns its URL, which we open for the parent.
+  // The invoice is marked 'paid' ONLY by the stripe-webhook (server-side) once
+  // money actually moves — never client-side.
+  const payInvoice = useCallback(async (invoiceId: string): Promise<{ error: string | null }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-invoice', {
+        body: { invoiceId },
+      });
+      if (error) {
+        console.warn('[AppContext] create-invoice failed:', error);
+        return { error: 'Could not start payment. Please try again.' };
+      }
+      const url = (data as { hostedInvoiceUrl?: string } | null)?.hostedInvoiceUrl;
+      if (!url) {
+        return { error: 'No payment link was returned for this invoice.' };
+      }
+      await Linking.openURL(url);
+      return { error: null };
+    } catch (err) {
+      console.warn('[AppContext] payInvoice error:', err);
+      return { error: 'Could not open the payment page.' };
     }
-  }, [auth.profile]);
+  }, []);
 
   // ── Dynamic report generation ──
   const generateDailyNarrative = useCallback(() => {
@@ -1290,7 +1348,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const value = useMemo(
     () => ({
-      isAuthenticated, isLoading, login, logout,
+      isAuthenticated, isLoading, dataLoading, dataError, login, logout,
       currentRole, switchRole, currentUser,
       children: allChildren, selectedChild, selectChild,
       timelineEntries, addTimelineEntry, addComment, deleteComment, toggleReaction,
@@ -1309,7 +1367,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       refreshData,
     }),
     [
-      isAuthenticated, isLoading, login, logout,
+      isAuthenticated, isLoading, dataLoading, dataError, login, logout,
       currentRole, switchRole, currentUser,
       allChildren, selectedChild, selectChild,
       timelineEntries, addTimelineEntry, addComment, deleteComment, toggleReaction,

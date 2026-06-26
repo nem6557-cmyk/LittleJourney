@@ -26,32 +26,68 @@ serve(async (req) => {
 
     // Get invoice details
     const { data: invoice } = await supabase.from('invoices')
-      .select('*, daycare:daycares!daycare_id(stripe_account_id), parent:profiles!parent_id(email, first_name, last_name)')
+      .select('*, daycare:daycares!daycare_id(stripe_account_id), parent:profiles!parent_id(id, email, first_name, last_name, stripe_customer_id)')
       .eq('id', invoiceId)
       .single();
 
     if (!invoice) return new Response('Invoice not found', { status: 404 });
+
+    // Idempotency: if a Stripe invoice already exists for this row, return it
+    // rather than creating a duplicate (handles client retries / double-taps).
+    if (invoice.stripe_invoice_id) {
+      const existing = await stripe.invoices.retrieve(invoice.stripe_invoice_id);
+      return new Response(JSON.stringify({
+        stripeInvoiceId: existing.id,
+        hostedInvoiceUrl: existing.hosted_invoice_url,
+        idempotent: true,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // Authorize: caller must be an admin of this invoice's daycare
+    const { data: callerProfile } = await supabase.from('profiles')
+      .select('role, daycare_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!callerProfile || callerProfile.role !== 'admin' || callerProfile.daycare_id !== invoice.daycare_id) {
+      return new Response('Forbidden', { status: 403 });
+    }
 
     const stripeAccountId = (invoice as any).daycare?.stripe_account_id;
     if (!stripeAccountId) {
       return new Response('Daycare has not completed Stripe onboarding', { status: 400 });
     }
 
-    // Get or create Stripe customer for parent
-    const parentEmail = (invoice as any).parent?.email;
-    let customerId: string;
-    const customers = await stripe.customers.list({ email: parentEmail, limit: 1 });
-    if (customers.data.length > 0) {
-      customerId = customers.data[0].id;
-    } else {
+    // Resolve the parent's Stripe customer by the stored id (stable, tied to
+    // the user) — never by mutable email. Create + persist on first use.
+    const parent = (invoice as any).parent;
+    let customerId: string | undefined = parent?.stripe_customer_id;
+    if (!customerId) {
       const customer = await stripe.customers.create({
-        email: parentEmail,
-        name: `${(invoice as any).parent?.first_name} ${(invoice as any).parent?.last_name}`,
+        email: parent?.email,
+        name: `${parent?.first_name ?? ''} ${parent?.last_name ?? ''}`.trim(),
+        metadata: { supabase_uid: parent?.id ?? '' },
       });
       customerId = customer.id;
+      if (parent?.id) {
+        await supabase.from('profiles').update({ stripe_customer_id: customerId }).eq('id', parent.id);
+      }
     }
 
-    // Create Stripe Invoice
+    // Validate that the line items actually sum to the invoice total before
+    // creating anything in Stripe — otherwise the displayed total and the
+    // platform fee (computed from amount_cents) would diverge.
+    const lineItemsForCheck = (invoice.line_items as Array<{ amount?: number }>) || [];
+    const lineSum = lineItemsForCheck.reduce((s, it) => s + (it.amount || 0), 0);
+    if (lineSum !== invoice.amount_cents) {
+      return new Response(
+        JSON.stringify({ error: `Line items ($${lineSum / 100}) do not sum to invoice total ($${invoice.amount_cents / 100}).` }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Create Stripe Invoice (idempotencyKey guards against duplicate creation
+    // if this function is retried before the DB write below lands).
     const stripeInvoice = await stripe.invoices.create({
       customer: customerId,
       collection_method: 'send_invoice',
@@ -59,7 +95,7 @@ serve(async (req) => {
       metadata: { invoice_id: invoiceId, daycare_id: invoice.daycare_id },
       application_fee_amount: Math.round(invoice.amount_cents * PLATFORM_FEE_PERCENT / 100),
       transfer_data: { destination: stripeAccountId },
-    });
+    }, { idempotencyKey: `invoice-${invoiceId}` });
 
     // Add line items
     const lineItems = invoice.line_items as any[];

@@ -33,7 +33,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onNavigate
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<'parent' | 'caregiver'>('parent');
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -125,19 +124,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onNavigate
         </LinearGradient>
 
         <View style={styles.loginForm}>
-          {/* Role Selector */}
-          <Text style={styles.formLabel}>I am a</Text>
-          <View style={styles.roleSelector}>
-            <TouchableOpacity style={[styles.roleOption, selectedRole === 'parent' && styles.roleOptionActive]} onPress={() => setSelectedRole('parent')} accessibilityLabel="Select parent role" accessibilityRole="button" accessibilityState={{ selected: selectedRole === 'parent' }}>
-              <Text style={styles.roleEmoji}>👨‍👩‍👧</Text>
-              <Text style={[styles.roleText, selectedRole === 'parent' && styles.roleTextActive]}>Parent</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.roleOption, selectedRole === 'caregiver' && styles.roleOptionActive]} onPress={() => setSelectedRole('caregiver')} accessibilityLabel="Select caregiver role" accessibilityRole="button" accessibilityState={{ selected: selectedRole === 'caregiver' }}>
-              <Text style={styles.roleEmoji}>👩‍🏫</Text>
-              <Text style={[styles.roleText, selectedRole === 'caregiver' && styles.roleTextActive]}>Caregiver</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Email */}
           <Text style={styles.formLabel}>Email</Text>
           <View style={[styles.inputContainer, Shadows.small, errors.email && styles.inputError]}>
@@ -224,12 +210,6 @@ const styles = StyleSheet.create({
   loginTagline: { fontSize: FontSizes.md, color: 'rgba(255,255,255,0.7)', marginTop: Spacing.xs },
   loginForm: { padding: Spacing.lg, marginTop: -Spacing.md },
   formLabel: { fontSize: FontSizes.sm, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: Spacing.lg, marginBottom: Spacing.sm },
-  roleSelector: { flexDirection: 'row', gap: Spacing.sm },
-  roleOption: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, gap: Spacing.sm, borderWidth: 2, borderColor: Colors.borderLight, ...Shadows.small },
-  roleOptionActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + '12' },
-  roleEmoji: { fontSize: 24 },
-  roleText: { fontSize: FontSizes.md, fontWeight: '600', color: Colors.textSecondary },
-  roleTextActive: { color: Colors.primary, fontWeight: '700' },
   inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: BorderRadius.lg, paddingHorizontal: Spacing.md, paddingVertical: Platform.OS === 'ios' ? Spacing.md : Spacing.sm, gap: Spacing.sm, borderWidth: 1, borderColor: Colors.borderLight },
   inputError: { borderColor: Colors.danger },
   input: { flex: 1, fontSize: FontSizes.md, color: Colors.textPrimary },

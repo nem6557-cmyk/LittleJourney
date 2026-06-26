@@ -1,3 +1,11 @@
+/**
+ * UNUSED / DEAD CODE: This standalone InvoiceDetailScreen is not imported or
+ * rendered anywhere in the app. It is superseded by ProfileScreen's own inline
+ * `invoice_detail` view, which is what users actually see. The `handlePay`
+ * fallback here only shows a placeholder Alert (no real Stripe flow). Kept for
+ * reference only — do not wire this up without first reconciling it with the
+ * ProfileScreen implementation.
+ */
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,

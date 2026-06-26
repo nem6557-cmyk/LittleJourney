@@ -1,10 +1,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2023-10-16' }) : null;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -99,6 +103,25 @@ serve(async (req) => {
         .delete()
         .eq('parent_id', user.id);
       deletionLog.push('Parent-child links removed');
+
+      // Cancel any active Stripe subscriptions BEFORE deleting the rows, so a
+      // deleted account doesn't keep getting billed.
+      const { data: parentSubs } = await supabase
+        .from('parent_subscriptions')
+        .select('stripe_subscription_id')
+        .eq('parent_id', user.id);
+      if (stripe && parentSubs) {
+        for (const sub of parentSubs) {
+          const sid = (sub as { stripe_subscription_id?: string }).stripe_subscription_id;
+          if (sid) {
+            try {
+              await stripe.subscriptions.cancel(sid);
+            } catch (err) {
+              console.warn('[data-deletion] Failed to cancel Stripe subscription', sid, err);
+            }
+          }
+        }
+      }
 
       // Delete parent subscriptions
       await supabase

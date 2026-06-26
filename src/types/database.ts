@@ -773,6 +773,22 @@ export interface Database {
         Args: Record<string, never>;
         Returns: { error?: string; daycare_id?: string };
       };
+      redeem_invite_code: {
+        Args: { p_code: string };
+        Returns: { error?: string | null; daycare_id?: string; role?: string };
+      };
+      create_daycare: {
+        Args: {
+          p_name: string;
+          p_address?: string | null;
+          p_city?: string | null;
+          p_state?: string | null;
+          p_zip?: string | null;
+          p_phone?: string | null;
+          p_email?: string | null;
+        };
+        Returns: { error?: string | null; daycare_id?: string };
+      };
     };
 
     Enums: Record<string, never>;

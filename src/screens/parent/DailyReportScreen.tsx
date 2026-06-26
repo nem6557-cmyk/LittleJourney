@@ -38,11 +38,13 @@ export const DailyReportScreen = () => {
 
   const childInitial = selectedChild.firstName.charAt(0);
 
-  // Derive caregiver from today's entries
-  const todayCaregiver = useMemo(() => {
-    const caregiverEntry = childEntries.find((e) => e.createdBy.role === 'caregiver');
-    return caregiverEntry?.createdBy || null;
-  }, [childEntries]);
+  // Derive caregiver + their note from today's entries
+  const caregiverEntry = useMemo(
+    () => childEntries.find((e) => e.createdBy.role === 'caregiver' && e.description?.trim()) || null,
+    [childEntries]
+  );
+  const todayCaregiver = caregiverEntry?.createdBy || null;
+  const caregiverNote = caregiverEntry?.description?.trim() || '';
   const caregiverName = todayCaregiver?.name || 'Your caregiver';
   const caregiverInitial = caregiverName.replace(/^(Ms\.|Mr\.|Mrs\.|Dr\.)\s*/, '').charAt(0);
 
@@ -125,19 +127,25 @@ export const DailyReportScreen = () => {
   };
 
   const handleThank = () => {
-    setThanked(true);
     // Find the conversation with the caregiver (not hardcoded)
     const caregiverConv = conversations.find((c) =>
       c.participants.some((p) => p.role === 'caregiver' && p.id !== currentUser.id)
     );
     const convId = caregiverConv?.id || conversations[0]?.id;
-    if (convId) {
-      sendMessage(
-        `Thank you so much for taking such great care of ${selectedChild.firstName} today! We really appreciate everything you do! 💝`,
-        false,
-        convId
+    if (!convId) {
+      // No conversation to send into — don't claim success.
+      showAlert(
+        'No conversation yet',
+        `You don't have a message thread with ${caregiverName} yet. Start a conversation from Messages to send your thanks.`
       );
+      return;
     }
+    sendMessage(
+      `Thank you so much for taking such great care of ${selectedChild.firstName} today! We really appreciate everything you do! 💝`,
+      false,
+      convId
+    );
+    setThanked(true);
     showAlert('Thank You Sent!', `Your appreciation has been sent to ${caregiverName}.`);
   };
 
@@ -220,7 +228,7 @@ export const DailyReportScreen = () => {
             <Text style={styles.sectionTitle}>{selectedChild.firstName}'s Story Today</Text>
             <View style={styles.aiBadge}>
               <Ionicons name="sparkles" size={12} color={Colors.primary} />
-              <Text style={styles.aiBadgeText}>AI</Text>
+              <Text style={styles.aiBadgeText}>Summary</Text>
             </View>
           </View>
           <Text style={styles.narrative}>
@@ -259,7 +267,7 @@ export const DailyReportScreen = () => {
         </View>
 
         {/* Caregiver Note */}
-        {childEntries.length > 0 && (
+        {caregiverNote !== '' && (
           <View style={[styles.section, Shadows.small]}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionIcon}>💌</Text>
@@ -270,7 +278,7 @@ export const DailyReportScreen = () => {
                 <Text style={styles.caregiverAvatarText}>{caregiverInitial}</Text>
               </View>
               <Text style={styles.caregiverNote}>
-                {selectedChild.firstName} had a wonderful day! Keep up the great work at home! 💝 — {caregiverName}
+                {caregiverNote} — {caregiverName}
               </Text>
             </View>
           </View>

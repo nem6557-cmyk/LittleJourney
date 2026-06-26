@@ -22,34 +22,37 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
     (e) => new Date(e.timestamp).toDateString() === new Date().toDateString()
   ).length;
 
+  // Only screens that are actually registered in AdminNavigator carry a `screen`.
+  // Items without one are not yet built and show a Coming Soon notice.
   const managementItems = [
     { icon: 'people' as const, label: 'Manage Children', desc: `${totalChildren} enrolled`, color: Colors.primary, screen: 'ManageChildren' },
     { icon: 'person-add' as const, label: 'Manage Staff', desc: 'Caregivers & teachers', color: Colors.info, screen: 'ManageStaff' },
-    { icon: 'grid' as const, label: 'Classrooms', desc: 'Rooms & assignments', color: Colors.success, screen: 'ManageClassrooms' },
-    { icon: 'calendar' as const, label: 'Calendar', desc: 'Events & closures', color: Colors.accent, screen: 'ManageCalendar' },
+    { icon: 'key' as const, label: 'Invite Codes', desc: 'Invite parents & staff', color: Colors.accent, screen: 'InviteCodes' },
+    { icon: 'grid' as const, label: 'Classrooms', desc: 'Rooms & assignments', color: Colors.success, screen: null },
+    { icon: 'calendar' as const, label: 'Calendar', desc: 'Events & closures', color: Colors.accent, screen: null },
   ];
 
   const quickActions = [
-    { icon: 'person-add-outline' as const, label: 'Add Child', color: Colors.primary },
-    { icon: 'mail-outline' as const, label: 'Send Announcement', color: Colors.secondary },
-    { icon: 'document-text-outline' as const, label: 'Generate Report', color: Colors.info },
-    { icon: 'key-outline' as const, label: 'Invite Codes', color: Colors.accent },
+    { icon: 'person-add-outline' as const, label: 'Add Child', color: Colors.primary, screen: 'ManageChildren' },
+    { icon: 'key-outline' as const, label: 'Invite Codes', color: Colors.accent, screen: 'InviteCodes' },
+    { icon: 'mail-outline' as const, label: 'Send Announcement', color: Colors.secondary, screen: null },
+    { icon: 'document-text-outline' as const, label: 'Generate Report', color: Colors.info, screen: null },
   ];
 
-  const handleManagementTap = (screen: string) => {
-    if (navigation) {
+  const handleManagementTap = (screen: string | null) => {
+    if (screen && navigation) {
       navigation.navigate(screen);
     } else {
       Alert.alert('Coming Soon', 'This management screen will be available in a future update.');
     }
   };
 
-  const handleQuickAction = (label: string) => {
-    if (label === 'Invite Codes' && navigation) {
-      navigation.navigate('InviteCodes');
+  const handleQuickAction = (action: { label: string; screen: string | null }) => {
+    if (action.screen && navigation) {
+      navigation.navigate(action.screen);
       return;
     }
-    Alert.alert(label, 'This feature will be available in a future update.');
+    Alert.alert(action.label, 'This feature will be available in a future update.');
   };
 
   return (
@@ -67,7 +70,12 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
               <Text style={styles.greeting}>Admin Dashboard</Text>
               <Text style={styles.headerTitle}>{daycareName}</Text>
             </View>
-            <TouchableOpacity style={styles.settingsBtn}>
+            <TouchableOpacity
+              style={styles.settingsBtn}
+              accessibilityLabel="Settings"
+              accessibilityRole="button"
+              onPress={() => navigation?.navigate('Profile')}
+            >
               <Ionicons name="settings-outline" size={22} color={Colors.white} />
             </TouchableOpacity>
           </View>
@@ -101,7 +109,7 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
               <TouchableOpacity
                 key={action.label}
                 style={[styles.quickAction, Shadows.small]}
-                onPress={() => handleQuickAction(action.label)}
+                onPress={() => handleQuickAction(action)}
               >
                 <View style={[styles.quickActionIcon, { backgroundColor: action.color + '15' }]}>
                   <Ionicons name={action.icon} size={22} color={action.color} />
