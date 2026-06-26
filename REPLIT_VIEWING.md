@@ -1,38 +1,44 @@
-# Viewing LittleJourney in Replit (web preview)
+# Viewing Little Journey in Replit (web preview)
 
-LittleJourney is a React Native / Expo app. On Replit you view it as the **web
-build** (Expo can compile the same app to a static website that runs in a
-browser). No Replit AI agent is needed — these are plain shell steps.
+Little Journey is a React Native / Expo app. On Replit you view it as the **web
+build** (Expo compiles the same app to a static website that runs in a browser).
+No Replit AI agent is needed — the repo is preconfigured.
 
-## Option A — Serve the prebuilt web bundle (fastest)
+## Quick start (recommended) — import and press Run
 
-The repo can produce a static site in `dist/`. To build and serve it:
+The repo ships with `.replit`, `replit.nix`, and `.nvmrc` already set up.
 
-```bash
-npm install
-npx expo export --platform web --output-dir dist
-npx serve dist          # or: python3 -m http.server -d dist 3000
-```
-
-In Replit:
-1. Import the repo (GitHub → `nem6557-cmyk/LittleJourney`, branch
-   `fix/cleanup-and-edge-fn-authz`).
-2. In the Shell, run the three commands above.
-3. Open the web preview pane on the served port. You'll see the app render
+1. In Replit: **Create App → Import from GitHub** → `nem6557-cmyk/LittleJourney`
+   (branch `fix/cleanup-and-edge-fn-authz`). The app shows as **Little Journey**.
+2. Press **Run**. The `Run Little Journey` workflow does:
+   `npm install` (auto) → `npm run build:web` → `npm run serve:web`.
+3. The web preview opens on port 3000 (mapped to 80) and renders the app
    (login screen first).
 
-`dist/` contains `index.html` + a single JS bundle, so any static file server
-works.
+What the run command maps to:
 
-## Option B — Run the Expo web dev server
+```bash
+npm run replit     # = build:web (expo export) then serve:web
+# build:web  -> expo export --platform web --output-dir dist
+# serve:web  -> serve -s dist -l tcp://0.0.0.0:${PORT:-3000}
+```
+
+Binding to `0.0.0.0` and using `$PORT` is required — Replit's proxy can't reach
+`localhost`-only servers. `serve -s` serves the SPA (client routes fall back to
+`index.html`), which is verified working.
+
+> First build takes a couple of minutes (it bundles ~1500 modules). Subsequent
+> runs are faster.
+
+## Alternative — Expo web dev server (hot reload, heavier)
 
 ```bash
 npm install
-npm run web          # expo start --web
+npx expo start --web --port 3000
 ```
 
-Then open the forwarded port in the Replit preview. This gives hot-reload but is
-heavier than the static export.
+Then open the forwarded port. Use only if you want live reload; the static
+export above is the reliable preview path on Replit.
 
 ## What you can actually do in the preview
 

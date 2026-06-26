@@ -1,0 +1,38 @@
+# Replit configuration for Little Journey (Expo web export served as a static site)
+# Imported from GitHub — no Replit Agent needed.
+
+run = "npm run replit"
+entrypoint = "App.tsx"
+modules = ["nodejs-20"]
+
+hidden = [".expo", "dist", "node_modules"]
+
+[nix]
+channel = "stable-24_05"
+
+[env]
+# Expo web export output + the host/port Replit's proxy requires.
+EXPO_PUBLIC_ENV = "development"
+
+# How Replit exposes the app: the web preview maps the container's port to 80/443.
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[deployment]
+# For a published Deployment, build once then serve the static export.
+deploymentTarget = "static"
+publicDir = "dist"
+build = ["npm", "run", "build:web"]
+
+[workflows]
+runButton = "Run Little Journey"
+
+[[workflows.workflow]]
+name = "Run Little Journey"
+mode = "sequential"
+author = "littlejourney"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run replit"
