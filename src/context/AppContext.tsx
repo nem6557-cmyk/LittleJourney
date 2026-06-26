@@ -17,6 +17,7 @@ import { messagesService } from '../services/messages.service';
 import { incidentsService } from '../services/incidents.service';
 import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
+import { attendanceService } from '../services/attendance.service';
 import { registerForPushNotifications, dispatchPushNotification } from '../lib/notifications';
 import { onNetworkChange, processPendingMutations } from '../lib/offline';
 
@@ -505,7 +506,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // ── Real-time subscription for timeline_entries (fixes #17) ──
   useEffect(() => {
-    if (!auth.profile) return;
+    if (!auth.profile?.daycare_id) return;
+    const daycareId = auth.profile.daycare_id;
 
     let channel: RealtimeChannel | null = null;
 
@@ -513,7 +515,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       .channel('timeline-realtime')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'timeline_entries' },
+        // Scope to the user's own daycare — don't receive every tenant's inserts.
+        { event: 'INSERT', schema: 'public', table: 'timeline_entries', filter: `daycare_id=eq.${daycareId}` },
         async (payload) => {
           const te = payload.new as any;
 
@@ -953,7 +956,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const sendMessage = useCallback(
     (text: string, isUrgent = false, conversationId?: string) => {
-      const convId = conversationId || activeConversationId || 'conv1';
+      const convId = conversationId || activeConversationId;
+      // Without a real conversation the DB insert would fail the FK/UUID format
+      // and the message would be silently lost. Require a valid conversation.
+      if (!convId) {
+        console.warn('[AppContext] sendMessage called with no active conversation; ignoring.');
+        return;
+      }
       const tempId = `m${Date.now()}`;
       const newMsg: Message = {
         id: tempId,
@@ -1000,8 +1009,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
       );
+      // Persist so unread counts stay correct across refetch / other devices.
+      if (auth.profile) {
+        messagesService
+          .markRead(convId, auth.profile.id)
+          .catch((err) => console.warn('[AppContext] Failed to persist read state:', err));
+      }
     }
-  }, [currentUser.id, activeConversationId]);
+  }, [currentUser.id, activeConversationId, auth.profile]);
 
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationId(id);
@@ -1021,7 +1036,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       description: desc,
       details: { method: 'Manual', person: currentUser.name },
     });
-    // Update attendance
+    // Update attendance (optimistic)
     const now = new Date();
     setAttendance((prev) =>
       prev.map((a) => {
@@ -1032,8 +1047,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         return { ...a, checkInTime: now.toISOString(), status: 'present' };
       })
     );
+
+    // Persist to Supabase so attendance survives refetch and is visible to others.
+    if (auth.profile?.daycare_id) {
+      const today = now.toISOString().split('T')[0];
+      const persist = isCheckedIn
+        ? attendanceService.checkOut(selectedChild.id, today, auth.profile.id)
+        : attendanceService.checkIn({
+            child_id: selectedChild.id,
+            daycare_id: auth.profile.daycare_id,
+            date: today,
+            status: 'present',
+            check_in_at: now.toISOString(),
+            check_in_by: auth.profile.id,
+          });
+      persist.catch((err) => console.warn('[AppContext] Failed to persist attendance:', err));
+    }
+
     setIsCheckedIn((prev) => !prev);
-  }, [isCheckedIn, selectedChild, addTimelineEntry, currentUser.name]);
+  }, [isCheckedIn, selectedChild, addTimelineEntry, currentUser.name, auth.profile]);
 
   // ── Notifications ──
   const unreadNotificationCount = useMemo(

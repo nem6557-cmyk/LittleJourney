@@ -128,11 +128,11 @@ describe('withRetry', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it('retries on failure and succeeds', async () => {
+  it('retries transient (network) failures and succeeds', async () => {
     const fn = jest
       .fn()
-      .mockRejectedValueOnce(new Error('fail'))
-      .mockRejectedValueOnce(new Error('fail'))
+      .mockRejectedValueOnce(new Error('network request failed'))
+      .mockRejectedValueOnce(new Error('connection timeout'))
       .mockResolvedValue('ok');
 
     const result = await withRetry(fn, 3, 10);
@@ -140,10 +140,16 @@ describe('withRetry', () => {
     expect(fn).toHaveBeenCalledTimes(3);
   });
 
-  it('throws after exhausting retries', async () => {
-    const fn = jest.fn().mockRejectedValue(new Error('always fails'));
-    await expect(withRetry(fn, 2, 10)).rejects.toThrow('always fails');
+  it('throws after exhausting retries on transient errors', async () => {
+    const fn = jest.fn().mockRejectedValue(new Error('network unreachable'));
+    await expect(withRetry(fn, 2, 10)).rejects.toThrow('network unreachable');
     expect(fn).toHaveBeenCalledTimes(3); // initial + 2 retries
+  });
+
+  it('does not retry permanent errors (4xx / constraint)', async () => {
+    const fn = jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }));
+    await expect(withRetry(fn, 3, 10)).rejects.toThrow('duplicate key');
+    expect(fn).toHaveBeenCalledTimes(1); // fails fast, no retries
   });
 });
 

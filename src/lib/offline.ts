@@ -12,10 +12,30 @@ type PendingMutation = {
   operation: 'insert' | 'update' | 'delete';
   data: Record<string, unknown>;
   createdAt: string;
+  retryCount?: number;
 };
 
 const PENDING_MUTATIONS_KEY = 'littlejourney_pending_mutations';
 const CACHE_PREFIX = 'littlejourney_cache_';
+// A mutation that keeps failing is dropped after this many attempts so one
+// "poison" write can't block the entire queue forever.
+const MAX_MUTATION_ATTEMPTS = 5;
+
+/**
+ * Decide whether an error is worth retrying. Network / 5xx errors are transient;
+ * 4xx, auth, and constraint violations are permanent and should fail fast.
+ */
+export function isRetryableError(err: unknown): boolean {
+  const e = err as { status?: number; code?: string; message?: string } | undefined;
+  if (!e) return false;
+  // Postgres/PostgREST/HTTP client errors carry a status or pg code.
+  if (typeof e.status === 'number') return e.status >= 500 || e.status === 429;
+  // pg error codes: 23xxx = integrity constraint, 42xxx = syntax/access — permanent.
+  if (e.code && /^(23|42|22|P0)/.test(e.code)) return false;
+  const msg = (e.message || '').toLowerCase();
+  // Heuristic: network-ish messages are retryable.
+  return /network|timeout|fetch failed|connection|econn|temporarily/.test(msg);
+}
 
 /**
  * Check if the device is currently online.
@@ -114,6 +134,25 @@ export async function removePendingMutation(mutationId: string): Promise<void> {
 }
 
 /**
+ * Increment a mutation's retry count in the queue.
+ */
+async function bumpMutationRetry(mutationId: string): Promise<number> {
+  try {
+    const existing = await getPendingMutations();
+    let count = 0;
+    const updated = existing.map((m) => {
+      if (m.id !== mutationId) return m;
+      count = (m.retryCount ?? 0) + 1;
+      return { ...m, retryCount: count };
+    });
+    await AsyncStorage.setItem(PENDING_MUTATIONS_KEY, JSON.stringify(updated));
+    return count;
+  } catch {
+    return MAX_MUTATION_ATTEMPTS; // on storage error, treat as exhausted
+  }
+}
+
+/**
  * Clear all pending mutations (e.g., after successful full sync).
  */
 export async function clearPendingMutations(): Promise<void> {
@@ -139,6 +178,8 @@ export async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
+      // Don't waste backoff cycles on permanent errors (4xx / constraint / auth).
+      if (!isRetryableError(err)) throw lastError;
       if (attempt < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, delayMs * Math.pow(2, attempt)));
       }
@@ -183,8 +224,17 @@ export async function processPendingMutations(
       await removePendingMutation(mutation.id);
       processed++;
     } catch (err) {
-      console.warn(`[Offline] Failed to sync mutation ${mutation.id}:`, err);
-      // Stop processing on first failure to preserve order
+      const permanent = !isRetryableError(err);
+      const attempts = await bumpMutationRetry(mutation.id);
+      if (permanent || attempts >= MAX_MUTATION_ATTEMPTS) {
+        // Dead-letter: drop the poison mutation so it can't block the queue,
+        // and keep draining the rest instead of stopping on first failure.
+        console.warn(`[Offline] Dropping mutation ${mutation.id} after ${attempts} attempt(s):`, err);
+        await removePendingMutation(mutation.id);
+        continue;
+      }
+      // Transient and still has attempts left — stop this pass, retry next time.
+      console.warn(`[Offline] Deferring mutation ${mutation.id} (attempt ${attempts}):`, err);
       break;
     }
   }
