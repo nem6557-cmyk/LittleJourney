@@ -17,6 +17,25 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(),
 }));
 
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: {
+    expoConfig: { version: '1.0.0', extra: { eas: { projectId: 'test-project-id' } } },
+    easConfig: { projectId: 'test-project-id' },
+  },
+}));
+
+jest.mock('expo-device', () => ({ isDevice: true }));
+
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
+  requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
+  getExpoPushTokenAsync: jest.fn().mockResolvedValue({ data: 'ExponentPushToken[test]' }),
+  setNotificationChannelAsync: jest.fn(),
+  AndroidImportance: { MAX: 5, HIGH: 4, DEFAULT: 3 },
+}));
+
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(),
   setItem: jest.fn(),
