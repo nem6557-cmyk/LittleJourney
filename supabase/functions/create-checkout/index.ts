@@ -33,7 +33,7 @@ serve(async (req) => {
 
     // Get caller profile (also used for authorization below)
     const { data: profile } = await supabase.from('profiles')
-      .select('email, first_name, last_name, role, daycare_id')
+      .select('email, first_name, last_name, role, daycare_id, stripe_customer_id')
       .eq('id', user.id)
       .single();
 
@@ -50,17 +50,17 @@ serve(async (req) => {
       effectiveDaycareId = profile.daycare_id;
     }
 
-    let customerId: string;
-    const customers = await stripe.customers.list({ email: profile?.email, limit: 1 });
-    if (customers.data.length > 0) {
-      customerId = customers.data[0].id;
-    } else {
+    // Resolve the Stripe customer by the stored id (stable, tied to auth.uid()),
+    // never by mutable email. Create + persist on first use.
+    let customerId: string | undefined = profile.stripe_customer_id ?? undefined;
+    if (!customerId) {
       const customer = await stripe.customers.create({
         email: profile?.email,
-        name: `${profile?.first_name} ${profile?.last_name}`,
+        name: `${profile?.first_name ?? ''} ${profile?.last_name ?? ''}`.trim(),
         metadata: { supabase_uid: user.id },
       });
       customerId = customer.id;
+      await supabase.from('profiles').update({ stripe_customer_id: customerId }).eq('id', user.id);
     }
 
     const priceId = PRICE_IDS[plan];

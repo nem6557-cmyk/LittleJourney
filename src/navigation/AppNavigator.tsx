@@ -57,6 +57,9 @@ const EmailVerificationWrapper = ({ route, navigation }: any) => (
   <EmailVerificationScreen
     email={route.params?.email || ''}
     onBackToLogin={() => navigation.navigate('Login')}
+    // Once verified, return to Login; if a session was established the root
+    // navigator switches to the authenticated app automatically.
+    onVerified={() => navigation.navigate('Login')}
   />
 );
 

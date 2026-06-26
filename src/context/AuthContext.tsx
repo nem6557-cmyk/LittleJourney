@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, Linking } from 'react-native';
 import { Session, User as SupabaseUser, AuthError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { config } from '../lib/config';
@@ -210,6 +210,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [fetchProfile]);
 
   // ----------------------------------------------------------
+  // Deep-link handler: establish a session from auth redirect URLs
+  // (password recovery + email confirmation). On native, detectSessionInUrl
+  // is off, so we must parse the URL and exchange the code ourselves.
+  // ----------------------------------------------------------
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isSupabaseConfigured()) return;
+
+    const handleUrl = async (url: string | null) => {
+      if (!url) return;
+      const isRecovery = url.includes('reset-password') || url.includes('type=recovery');
+      try {
+        // PKCE flow: ?code=... — exchange it for a session.
+        const code = url.match(/[?&]code=([^&]+)/)?.[1];
+        if (code) {
+          await supabase.auth.exchangeCodeForSession(decodeURIComponent(code));
+        } else {
+          // Implicit flow: tokens in the URL fragment (#access_token=...&refresh_token=...).
+          const hash = url.split('#')[1] ?? '';
+          const params = new URLSearchParams(hash);
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+          if (access_token && refresh_token) {
+            await supabase.auth.setSession({ access_token, refresh_token });
+          }
+        }
+        if (isRecovery) setIsPasswordRecovery(true);
+      } catch (err) {
+        console.warn('[Auth] Failed to handle auth deep link:', err);
+      }
+    };
+
+    // Cold start (app opened directly from the link).
+    Linking.getInitialURL().then(handleUrl);
+    // Warm start (app already running).
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => sub.remove();
+  }, []);
+
+  // ----------------------------------------------------------
   // Auth actions
   // ----------------------------------------------------------
 
@@ -277,11 +316,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return { error: null };
     }
     setIsDemoMode(false);
+    const emailRedirectTo = Platform.OS === 'web' ? window.location.origin : 'littlejourney://';
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: metadata, // Stored in raw_user_meta_data, used by handle_new_user trigger
+        data: metadata, // Stored in raw_user_meta_data (only first/last name are trusted server-side)
+        // Return the user to the app after they tap the confirmation link.
+        emailRedirectTo,
       },
     });
     return { error };

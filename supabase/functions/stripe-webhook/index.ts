@@ -14,6 +14,22 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! // Service role for admin access
 );
 
+// Map a Stripe subscription status to our DB enum. Returns null for ambiguous
+// transitional states ('incomplete', 'paused') so we don't clobber the row.
+function mapSubStatus(status: Stripe.Subscription.Status): 'active' | 'trialing' | 'past_due' | 'canceled' | null {
+  switch (status) {
+    case 'active': return 'active';
+    case 'trialing': return 'trialing';
+    case 'past_due': return 'past_due';
+    case 'canceled':
+    case 'unpaid':
+    case 'incomplete_expired':
+      return 'canceled';
+    default:
+      return null; // incomplete, paused, etc. — leave as-is
+  }
+}
+
 serve(async (req) => {
   const signature = req.headers.get('stripe-signature');
   if (!signature) return new Response('Missing signature', { status: 400 });
@@ -27,6 +43,19 @@ serve(async (req) => {
   }
 
   try {
+    // Idempotency: Stripe retries deliveries. Record the event id first; if it
+    // already exists, this is a duplicate — acknowledge and skip processing.
+    const { error: dedupError } = await supabase
+      .from('stripe_events')
+      .insert({ id: event.id });
+    if (dedupError) {
+      // Unique-violation (23505) => already processed. Anything else, surface.
+      if ((dedupError as { code?: string }).code === '23505') {
+        return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 });
+      }
+      throw dedupError;
+    }
+
     switch (event.type) {
       // ---- Daycare Subscriptions ----
       case 'checkout.session.completed': {
@@ -106,17 +135,16 @@ serve(async (req) => {
 
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription;
-        // Update daycare subscription
-        await supabase.from('subscriptions').update({
-          status: sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : 'canceled',
-          current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
-        }).eq('stripe_subscription_id', sub.id);
-
-        // Also check parent subscriptions
-        await supabase.from('parent_subscriptions').update({
-          status: sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : 'canceled',
-          current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
-        }).eq('stripe_subscription_id', sub.id);
+        const mapped = mapSubStatus(sub.status);
+        // Skip ambiguous transitional states rather than wrongly cancelling.
+        if (mapped) {
+          const update = {
+            status: mapped,
+            current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+          };
+          await supabase.from('subscriptions').update(update).eq('stripe_subscription_id', sub.id);
+          await supabase.from('parent_subscriptions').update(update).eq('stripe_subscription_id', sub.id);
+        }
         break;
       }
 

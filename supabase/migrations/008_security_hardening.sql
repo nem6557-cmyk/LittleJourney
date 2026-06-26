@@ -46,3 +46,18 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Status transitions (paid / overdue) come only from the stripe-webhook,
 -- which runs with the service role and bypasses RLS.
 DROP POLICY IF EXISTS "Parents can update own invoices (pay)" ON invoices;
+
+-- ── 4. Stripe webhook idempotency ──
+-- Stripe retries deliveries; record processed event ids so handlers run once.
+CREATE TABLE IF NOT EXISTS stripe_events (
+  id TEXT PRIMARY KEY,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- Only the service role (webhook) touches this table; RLS on with no policies
+-- denies all client access by default.
+ALTER TABLE stripe_events ENABLE ROW LEVEL SECURITY;
+
+-- ── 5. Stable Stripe customer reference ──
+-- Resolve/authorize Stripe customers by a stored id tied to auth.uid(), never
+-- by mutable email (which a user could change to a victim's address).
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;

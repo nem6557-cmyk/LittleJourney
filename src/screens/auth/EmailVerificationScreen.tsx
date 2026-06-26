@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
@@ -10,15 +10,40 @@ import { supabase } from '../../lib/supabase';
 interface EmailVerificationScreenProps {
   email: string;
   onBackToLogin: () => void;
+  onVerified?: () => void;
 }
 
 export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = ({
   email,
   onBackToLogin,
+  onVerified,
 }) => {
   const [isResending, setIsResending] = useState(false);
   const [resent, setResent] = useState(false);
   const [error, setError] = useState('');
+
+  // Poll for verification: once the user confirms via the email link, advance
+  // automatically instead of making them navigate back and sign in manually.
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!cancelled && data.user?.email_confirmed_at) {
+        onVerified?.();
+      }
+    };
+    // Also react immediately to the auth event fired by the confirmation deep link.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled && session?.user?.email_confirmed_at) onVerified?.();
+    });
+    const interval = setInterval(check, 4000);
+    check();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      subscription.unsubscribe();
+    };
+  }, [onVerified]);
 
   const handleResend = async () => {
     setIsResending(true);
