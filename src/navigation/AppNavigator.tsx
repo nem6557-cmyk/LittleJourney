@@ -242,7 +242,7 @@ export const AppNavigator = () => {
     if (profile && !profile.daycare_id && (profile.role === 'parent' || profile.role === 'caregiver' || profile.role === 'family')) {
       return <InviteCodeScreen />;
     }
-    if (profile && profile.role === 'parent' && !profile.coppa_consent_at) {
+    if (profile && (profile.role === 'parent' || profile.role === 'family') && !profile.coppa_consent_at) {
       return (
         <ConsentScreen
           parentName={`${profile.first_name || ''} ${profile.last_name || ''}`.trim()}

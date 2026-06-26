@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef, ReactNode } from 'react';
-import { Alert, Share, Platform } from 'react-native';
+import { Alert, Share, Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   UserRole, User, TimelineEntry, Message, Child, MoodType, Conversation,
@@ -85,7 +85,7 @@ interface AppContextType {
 
   // Invoices
   invoices: Invoice[];
-  payInvoice: (invoiceId: string) => void;
+  payInvoice: (invoiceId: string) => Promise<{ error: string | null }>;
 
   // Learning Plans
   learningPlans: LearningPlan[];
@@ -494,7 +494,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
     };
-  }, [auth.profile, refreshCounter]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Intentionally re-runs only when the signed-in profile or the manual
+    // refresh counter changes — not on every referenced setter/value.
+  }, [auth.profile, refreshCounter]);
 
   // ── refreshData: re-trigger data fetch from Supabase ──
   const refreshData = useCallback(async () => {
@@ -636,46 +638,53 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [auth.profile]);
 
-  // ── Offline sync: process pending mutations when connectivity returns ──
+  // ── Offline sync: replay any queued mutations ──
+  const flushPendingMutations = useCallback(async () => {
+    try {
+      const synced = await processPendingMutations(async (mutation) => {
+        const { table, operation, data } = mutation;
+        if (operation === 'insert') {
+          // Remove offline-prefixed IDs before inserting
+          const insertData = { ...data };
+          if (typeof insertData.id === 'string' && insertData.id.startsWith('offline_')) {
+            delete insertData.id;
+          }
+          const { error } = await supabase.from(table).insert(insertData as any);
+          if (error) throw error;
+        } else if (operation === 'update') {
+          const id = data.id as string;
+          if (!id) throw new Error('Missing id for update');
+          const updateData = { ...data };
+          delete updateData.id; // Don't update the primary key
+          const { error } = await (supabase.from(table) as any).update(updateData).eq('id', id);
+          if (error) throw error;
+        } else if (operation === 'delete') {
+          const id = data.id as string;
+          if (!id) throw new Error('Missing id for delete');
+          const { error } = await supabase.from(table).delete().eq('id', id);
+          if (error) throw error;
+        }
+      });
+      if (synced > 0) {
+        console.warn(`[Offline] Synced ${synced} pending mutation(s)`);
+        setRefreshCounter((c) => c + 1); // Refresh data after sync
+      }
+    } catch (err) {
+      console.warn('[Offline] Sync error:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (!auth.profile) return;
-    const unsubscribe = onNetworkChange(async (connected) => {
-      if (!connected) return;
-      try {
-        const synced = await processPendingMutations(async (mutation) => {
-          const { table, operation, data } = mutation;
-          if (operation === 'insert') {
-            // Remove offline-prefixed IDs before inserting
-            const insertData = { ...data };
-            if (typeof insertData.id === 'string' && insertData.id.startsWith('offline_')) {
-              delete insertData.id;
-            }
-            const { error } = await supabase.from(table).insert(insertData as any);
-            if (error) throw error;
-          } else if (operation === 'update') {
-            const id = data.id as string;
-            if (!id) throw new Error('Missing id for update');
-            const updateData = { ...data };
-            delete updateData.id; // Don't update the primary key
-            const { error } = await (supabase.from(table) as any).update(updateData).eq('id', id);
-            if (error) throw error;
-          } else if (operation === 'delete') {
-            const id = data.id as string;
-            if (!id) throw new Error('Missing id for delete');
-            const { error } = await supabase.from(table).delete().eq('id', id);
-            if (error) throw error;
-          }
-        });
-        if (synced > 0) {
-          console.warn(`[Offline] Synced ${synced} pending mutation(s)`);
-          setRefreshCounter((c) => c + 1); // Refresh data after sync
-        }
-      } catch (err) {
-        console.warn('[Offline] Sync error:', err);
-      }
+    // Flush once on startup — covers the case where the app was closed offline
+    // and reopened while already online (no connectivity-change event fires).
+    flushPendingMutations();
+    // And flush whenever connectivity is (re)gained.
+    const unsubscribe = onNetworkChange((connected) => {
+      if (connected) flushPendingMutations();
     });
     return () => unsubscribe();
-  }, [auth.profile]);
+  }, [auth.profile, flushPendingMutations]);
 
   // ── Reset state when user logs out (fixes #29) ──
   useEffect(() => {
@@ -1103,26 +1112,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // ── Invoices ──
-  const payInvoice = useCallback((invoiceId: string) => {
-    const now = new Date().toISOString();
-    setInvoices((prev) =>
-      prev.map((inv) =>
-        inv.id === invoiceId
-          ? { ...inv, status: 'paid' as const, paidDate: now.split('T')[0] }
-          : inv
-      )
-    );
-    // Persist to Supabase
-    if (auth.profile) {
-      supabase
-        .from('invoices')
-        .update({ status: 'paid', paid_at: now })
-        .eq('id', invoiceId)
-        .then(({ error }) => {
-          if (error) console.warn('[AppContext] Failed to persist invoice payment:', error);
-        });
+  // Payment goes through Stripe: the create-invoice edge function finalizes a
+  // hosted Stripe invoice and returns its URL, which we open for the parent.
+  // The invoice is marked 'paid' ONLY by the stripe-webhook (server-side) once
+  // money actually moves — never client-side.
+  const payInvoice = useCallback(async (invoiceId: string): Promise<{ error: string | null }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-invoice', {
+        body: { invoiceId },
+      });
+      if (error) {
+        console.warn('[AppContext] create-invoice failed:', error);
+        return { error: 'Could not start payment. Please try again.' };
+      }
+      const url = (data as { hostedInvoiceUrl?: string } | null)?.hostedInvoiceUrl;
+      if (!url) {
+        return { error: 'No payment link was returned for this invoice.' };
+      }
+      await Linking.openURL(url);
+      return { error: null };
+    } catch (err) {
+      console.warn('[AppContext] payInvoice error:', err);
+      return { error: 'Could not open the payment page.' };
     }
-  }, [auth.profile]);
+  }, []);
 
   // ── Dynamic report generation ──
   const generateDailyNarrative = useCallback(() => {

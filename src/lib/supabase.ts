@@ -45,8 +45,8 @@ const ExpoSecureStoreAdapter = {
     }
     if (value.length <= CHUNK_SIZE) {
       await SecureStore.setItemAsync(key, value);
-      // Clean up any old chunks
-      try { await SecureStore.deleteItemAsync(`${key}_chunk_0`); } catch {}
+      // Clean up any old chunks (ignore if they don't exist)
+      try { await SecureStore.deleteItemAsync(`${key}_chunk_0`); } catch { /* no chunk to remove */ }
       return;
     }
 
@@ -55,9 +55,9 @@ const ExpoSecureStoreAdapter = {
     for (let i = 0; i < chunks; i++) {
       await SecureStore.setItemAsync(`${key}_chunk_${i}`, value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
     }
-    // Clean up the non-chunked key and any extra old chunks
-    try { await SecureStore.deleteItemAsync(key); } catch {}
-    try { await SecureStore.deleteItemAsync(`${key}_chunk_${chunks}`); } catch {}
+    // Clean up the non-chunked key and any extra old chunks (ignore if absent)
+    try { await SecureStore.deleteItemAsync(key); } catch { /* nothing to remove */ }
+    try { await SecureStore.deleteItemAsync(`${key}_chunk_${chunks}`); } catch { /* nothing to remove */ }
   },
   removeItem: async (key: string): Promise<void> => {
     if (Platform.OS === 'web') {

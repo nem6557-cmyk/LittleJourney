@@ -166,12 +166,13 @@ export const CaregiverDashboard = () => {
       let details: Record<string, any> = {};
 
       switch (selectedAction.type) {
-        case 'meal':
+        case 'meal': {
           title = selectedMealType;
           const items = mealItems.split(',').map((s) => s.trim()).filter(Boolean);
           details = { mealType: selectedMealType.toLowerCase(), amount: selectedAmount.toLowerCase(), items: items.length > 0 ? items : undefined };
           if (!description) description = `${selectedMealType}${items.length > 0 ? ` — ${items.join(', ')}` : ''} — ate ${selectedAmount.toLowerCase()}.`;
           break;
+        }
         case 'nap':
           title = napAction === 'sleeping' ? 'Nap Time Started' : 'Woke Up from Nap';
           details = { status: napAction };

@@ -46,16 +46,18 @@ BEGIN
   WHERE id = v_invite.id;
 
   -- Link the caller to the daycare with the role baked into the invite
-  -- (the caller cannot influence this).
+  -- (the caller cannot influence this). Cast through text because Postgres
+  -- forbids a direct enum-to-enum cast (invite_role -> user_role).
   UPDATE profiles
   SET daycare_id = v_invite.daycare_id,
-      role = v_invite.role::user_role
+      role = v_invite.role::text::user_role
   WHERE id = v_uid;
 
-  -- Parent invite with a specific child -> parent-child link.
-  IF v_invite.role = 'parent' AND v_invite.child_id IS NOT NULL THEN
+  -- Parent/family invite with a specific child -> parent-child link, so the
+  -- guardian can actually see the child (parent RLS keys off is_parent_of_child).
+  IF v_invite.role IN ('parent', 'family') AND v_invite.child_id IS NOT NULL THEN
     INSERT INTO parent_children (parent_id, child_id, relationship)
-    VALUES (v_uid, v_invite.child_id, 'parent')
+    VALUES (v_uid, v_invite.child_id, v_invite.role::text::relationship_type)
     ON CONFLICT (parent_id, child_id) DO NOTHING;
   END IF;
 

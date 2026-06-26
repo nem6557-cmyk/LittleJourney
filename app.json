@@ -1,63 +1,6 @@
 {
   "expo": {
     "name": "LittleJourney",
-    "slug": "LittleJourney",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "scheme": "littlejourney",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#6C63FF"
-    },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.littlejourney.app",
-      "associatedDomains": [
-        "applinks:littlejourney.app"
-      ]
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#6C63FF"
-      },
-      "package": "com.littlejourney.app",
-      "edgeToEdgeEnabled": true,
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "littlejourney"
-            }
-          ],
-          "category": [
-            "DEFAULT",
-            "BROWSABLE"
-          ]
-        }
-      ]
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "description": "A modern daycare management app connecting parents, caregivers, and administrators with real-time updates, secure messaging, and activity tracking.",
-    "privacy": "unlisted",
-    "githubUrl": "https://github.com/nem6557-cmyk/LittleJourney",
-    "plugins": [
-      [
-        "@sentry/react-native/expo",
-        {
-          "url": "https://sentry.io/",
-          "project": "littlejourney",
-          "organization": "rochester-institute-of-tech-70"
-        }
-      ]
-    ]
+    "slug": "LittleJourney"
   }
 }

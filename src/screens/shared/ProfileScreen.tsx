@@ -92,7 +92,9 @@ export const ProfileScreen = () => {
           if (prefs.autoPayEnabled !== undefined) setAutoPayEnabled(prefs.autoPayEnabled);
           if (prefs.autoPayDay !== undefined) setAutoPayDay(prefs.autoPayDay);
         }
-      } catch {}
+      } catch {
+        // Preferences are non-critical; fall back to defaults if load fails.
+      }
     })();
   }, []);
 
@@ -105,7 +107,9 @@ export const ProfileScreen = () => {
         selectedLanguage, autoTranslate, targetLanguage,
         autoPayEnabled, autoPayDay,
       }));
-    } catch {}
+    } catch {
+      // Best-effort persistence; a failed write is non-fatal.
+    }
   }, [smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
       photoSharing, classPhotos, analyticsSharing,
       selectedLanguage, autoTranslate, targetLanguage,
@@ -423,11 +427,15 @@ export const ProfileScreen = () => {
               <TouchableOpacity
                 style={styles.payButton}
                 onPress={() => {
-                  Alert.alert('Confirm Payment', `Pay $${selectedInvoice.amount.toFixed(2)}${paymentCard ? ` with ${paymentCard.type} ending in ${paymentCard.last4}` : ''}?`, [
+                  Alert.alert('Pay Invoice', `Continue to securely pay $${selectedInvoice.amount.toFixed(2)} via Stripe?`, [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Pay Now', onPress: () => {
-                      payInvoice(selectedInvoice.id);
-                      showAlert('Payment Successful', `$${selectedInvoice.amount.toFixed(2)} has been paid.`);
+                    { text: 'Continue', onPress: async () => {
+                      const { error } = await payInvoice(selectedInvoice.id);
+                      if (error) {
+                        showAlert('Payment Unavailable', error);
+                      } else {
+                        showAlert('Opening Secure Checkout', 'Complete your payment in the page that just opened. Your invoice updates automatically once payment is confirmed.');
+                      }
                     }},
                   ]);
                 }}

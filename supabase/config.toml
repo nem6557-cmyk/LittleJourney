@@ -37,3 +37,15 @@ file_size_limit = "50MiB"
 
 [realtime]
 enabled = true
+
+# ── Edge function gateway auth ──
+# Stripe sends a stripe-signature header, NOT a Supabase JWT, so the default
+# verify_jwt=true would 401 every webhook before the handler runs. The handler
+# verifies the Stripe signature itself.
+[functions.stripe-webhook]
+verify_jwt = false
+
+# Triggered by a Supabase DB webhook (no JWT). The function authorizes the call
+# itself via the x-webhook-secret shared secret (or a staff JWT when present).
+[functions.send-push]
+verify_jwt = false
