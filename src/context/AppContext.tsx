@@ -25,6 +25,8 @@ interface AppContextType {
   // Auth / role
   isAuthenticated: boolean;
   isLoading: boolean;
+  dataLoading: boolean;
+  dataError: string | null;
   login: (role: UserRole) => void;
   logout: () => void;
   currentRole: UserRole;
@@ -124,6 +126,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const auth = useAuth();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  // Tracks the live Supabase fetch (distinct from the legacy AsyncStorage
+  // isLoading) so screens show skeletons while real data loads and an error
+  // state if the fetch fails, rather than a premature "No data yet".
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>('parent');
   const [selectedChildId, setSelectedChildId] = useState('child1');
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
@@ -177,6 +184,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     let cancelled = false;
+    setDataLoading(true);
+    setDataError(null);
 
     const fetchSupabaseData = async () => {
       try {
@@ -486,7 +495,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       } catch (err) {
         console.error('[AppContext] Error fetching Supabase data:', err);
-        // On error, keep sample data as fallback
+        if (!cancelled) {
+          setDataError(err instanceof Error ? err.message : 'Could not load your data.');
+        }
+      } finally {
+        if (!cancelled) setDataLoading(false);
       }
     };
 
@@ -1335,7 +1348,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const value = useMemo(
     () => ({
-      isAuthenticated, isLoading, login, logout,
+      isAuthenticated, isLoading, dataLoading, dataError, login, logout,
       currentRole, switchRole, currentUser,
       children: allChildren, selectedChild, selectChild,
       timelineEntries, addTimelineEntry, addComment, deleteComment, toggleReaction,
@@ -1354,7 +1367,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       refreshData,
     }),
     [
-      isAuthenticated, isLoading, login, logout,
+      isAuthenticated, isLoading, dataLoading, dataError, login, logout,
       currentRole, switchRole, currentUser,
       allChildren, selectedChild, selectChild,
       timelineEntries, addTimelineEntry, addComment, deleteComment, toggleReaction,

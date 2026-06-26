@@ -13,13 +13,12 @@ import { EmptyState } from '../../components/EmptyState';
 type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void };
 
 export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigation }) => {
-  const { children, selectedChild, selectChild } = useApp();
+  const { children, selectedChild, selectChild, refreshData } = useApp();
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
-  const [newClassroom, setNewClassroom] = useState('');
   const [newDateOfBirth, setNewDateOfBirth] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
@@ -51,11 +50,11 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
         medical_notes: null,
       });
 
+      await refreshData();
       Alert.alert('Success', `${newFirstName} ${newLastName} has been enrolled.`);
       setShowAddModal(false);
       setNewFirstName('');
       setNewLastName('');
-      setNewClassroom('');
       setNewDateOfBirth('');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to add child. Please try again.');
@@ -157,14 +156,6 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
               value={newDateOfBirth}
               onChangeText={setNewDateOfBirth}
               placeholder="YYYY-MM-DD"
-              placeholderTextColor={Colors.textMuted}
-            />
-            <Text style={styles.fieldLabel}>Classroom</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={newClassroom}
-              onChangeText={setNewClassroom}
-              placeholder="e.g. Butterfly Room (optional)"
               placeholderTextColor={Colors.textMuted}
             />
             <TouchableOpacity style={styles.submitBtn} onPress={handleAdd} disabled={isAdding}>

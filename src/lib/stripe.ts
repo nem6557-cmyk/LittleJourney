@@ -3,16 +3,17 @@ import { supabase } from './supabase';
 import { config } from './config';
 
 /**
- * Stripe configuration for LittleJourney.
+ * Stripe configuration and billing helpers for LittleJourney.
  *
- * In the actual app, import and wrap root with:
- *   import { StripeProvider } from '@stripe/stripe-react-native';
+ * This module is config + server-driven billing only. Payments are collected
+ * through Stripe-hosted Checkout (see createCheckoutSession), which opens in the
+ * browser — there is no in-app card entry, so @stripe/stripe-react-native's
+ * StripeProvider / PaymentSheet is NOT wired up here. If native in-app card
+ * collection is added later, wrap the app root in <StripeProvider> using
+ * stripeConfig.publishableKey.
  *
- *   <StripeProvider publishableKey={stripeConfig.publishableKey}>
- *     <App />
- *   </StripeProvider>
- *
- * This file provides the configuration constants and helper methods.
+ * Exports: the stripeConfig / price / feature-gating constants and the
+ * checkout + subscription-status helpers below.
  */
 
 export const stripeConfig = {

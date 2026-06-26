@@ -39,13 +39,23 @@ export function isRetryableError(err: unknown): boolean {
 
 /**
  * Check if the device is currently online.
+ *
+ * We require an active link (`isConnected`) AND don't treat a captive-portal /
+ * no-internet link as online. `isInternetReachable` can be `null` while NetInfo
+ * is still probing, so we only reject when it is explicitly `false` rather than
+ * "not yet known" — this avoids false negatives right after the app boots.
  */
 export async function isOnline(): Promise<boolean> {
   try {
     const state = await NetInfo.fetch();
-    return state.isConnected === true;
+    return state.isConnected === true && state.isInternetReachable !== false;
   } catch {
-    return true; // Assume online if check fails
+    // Tradeoff: if the NetInfo check itself throws we assume online. This biases
+    // reads/queries to be *attempted* (and fail fast on their own) rather than
+    // wrongly short-circuited as offline. The cost is that queued mutations may
+    // be dispatched while genuinely offline, but withRetry / the dead-letter
+    // logic in processPendingMutations absorbs that case safely.
+    return true;
   }
 }
 

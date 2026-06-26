@@ -127,19 +127,25 @@ export const DailyReportScreen = () => {
   };
 
   const handleThank = () => {
-    setThanked(true);
     // Find the conversation with the caregiver (not hardcoded)
     const caregiverConv = conversations.find((c) =>
       c.participants.some((p) => p.role === 'caregiver' && p.id !== currentUser.id)
     );
     const convId = caregiverConv?.id || conversations[0]?.id;
-    if (convId) {
-      sendMessage(
-        `Thank you so much for taking such great care of ${selectedChild.firstName} today! We really appreciate everything you do! 💝`,
-        false,
-        convId
+    if (!convId) {
+      // No conversation to send into — don't claim success.
+      showAlert(
+        'No conversation yet',
+        `You don't have a message thread with ${caregiverName} yet. Start a conversation from Messages to send your thanks.`
       );
+      return;
     }
+    sendMessage(
+      `Thank you so much for taking such great care of ${selectedChild.firstName} today! We really appreciate everything you do! 💝`,
+      false,
+      convId
+    );
+    setThanked(true);
     showAlert('Thank You Sent!', `Your appreciation has been sent to ${caregiverName}.`);
   };
 
@@ -222,7 +228,7 @@ export const DailyReportScreen = () => {
             <Text style={styles.sectionTitle}>{selectedChild.firstName}'s Story Today</Text>
             <View style={styles.aiBadge}>
               <Ionicons name="sparkles" size={12} color={Colors.primary} />
-              <Text style={styles.aiBadgeText}>AI</Text>
+              <Text style={styles.aiBadgeText}>Summary</Text>
             </View>
           </View>
           <Text style={styles.narrative}>

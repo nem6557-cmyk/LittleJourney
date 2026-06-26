@@ -14,6 +14,14 @@ const isSupabaseConfigured = (): boolean => {
   return !!url && !url.includes('YOUR_PROJECT_ID') && !url.includes('your-') && url.startsWith('https://');
 };
 
+/**
+ * Demo mode (fake local session, no backend) is ONLY allowed in development.
+ * A misconfigured production build must never silently fall into a fake
+ * admin/parent session — config.ts also throws in prod, but this is defense
+ * in depth at the auth boundary.
+ */
+const isDemoModeAllowed = (): boolean => __DEV__ && !isSupabaseConfigured();
+
 // ============================================================
 // Types
 // ============================================================
@@ -114,25 +122,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    // Safety timeout: never stay on loading/splash screen longer than 8s.
-    // If profile still hasn't loaded, sign out to break the deadlock and
-    // show the login screen instead of being stuck on splash forever.
+    // Safety timeout: never stay on the splash screen forever. We only stop the
+    // loading spinner here — we do NOT force sign-out, because a slow profile
+    // fetch on a poor connection is not the same as a missing profile. The
+    // genuine "authenticated but no profile" case is handled (with a retry) in
+    // the getSession + onAuthStateChange paths below, and AppNavigator shows a
+    // "Sign Out & Try Again" affordance if profile never loads.
     const safetyTimer = setTimeout(() => {
-      console.warn('[Auth] Safety timeout — forcing past splash screen');
+      console.warn('[Auth] Safety timeout — leaving splash; profile may still be loading.');
       setIsLoading(false);
-      // If authenticated but profile never loaded, the AppNavigator will
-      // still be stuck. Force sign-out to break the deadlock.
-      setProfile((currentProfile) => {
-        if (!currentProfile) {
-          console.warn('[Auth] No profile loaded — signing out stale session');
-          supabase.auth.signOut().catch(() => {});
-          setSession(null);
-          setUser(null);
-          setDaycare(null);
-        }
-        return currentProfile;
-      });
-    }, 8000);
+    }, 12000);
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
@@ -292,8 +291,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    // When Supabase isn't configured, fall back to demo mode
-    if (!isSupabaseConfigured()) {
+    // In development only, fall back to demo mode when Supabase isn't configured.
+    if (isDemoModeAllowed()) {
       const role: UserRole = email.toLowerCase().includes('caregiver') ? 'caregiver'
         : email.toLowerCase().includes('admin') ? 'admin'
         : 'parent';
@@ -310,8 +309,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     password: string,
     metadata: { first_name: string; last_name: string; role: UserRole }
   ) => {
-    // When Supabase isn't configured, fall back to demo mode
-    if (!isSupabaseConfigured()) {
+    // In development only, fall back to demo mode when Supabase isn't configured.
+    if (isDemoModeAllowed()) {
       activateDemoMode(metadata.role);
       return { error: null };
     }

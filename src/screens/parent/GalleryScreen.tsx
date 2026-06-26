@@ -11,6 +11,8 @@ import { useApp } from '../../context/AppContext';
 import { GallerySkeleton } from '../../components/LoadingSkeleton';
 import { EmptyState } from '../../components/EmptyState';
 import { Milestone, LearningPlan, CalendarEvent } from '../../types';
+import { milestonesService } from '../../services/milestones.service';
+import { supabase } from '../../lib/supabase';
 
 type Tab = 'gallery' | 'milestones' | 'calendar' | 'learning';
 
@@ -169,7 +171,12 @@ export const GalleryScreen = () => {
 
   const selectedPhoto = selectedPhotoIndex !== null ? filteredPhotos[selectedPhotoIndex] : null;
 
-  const toggleMilestone = (id: string) => {
+  const toggleMilestone = async (id: string) => {
+    const target = milestoneData.find((m) => m.id === id);
+    if (!target) return;
+    const wasAchieved = !!target.achievedDate;
+
+    // Optimistic local update
     setMilestoneData((prev) =>
       prev.map((m) =>
         m.id === id
@@ -177,6 +184,27 @@ export const GalleryScreen = () => {
           : m
       )
     );
+
+    try {
+      if (wasAchieved) {
+        // Un-mark: no service helper exists for clearing, so update directly.
+        const { error } = await supabase
+          .from('milestones')
+          .update({ achieved_at: null, noted_by: null })
+          .eq('id', id);
+        if (error) throw error;
+      } else {
+        await milestonesService.markAchieved(id, currentUser.id);
+      }
+    } catch {
+      // Revert on failure
+      setMilestoneData((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...m, achievedDate: target.achievedDate } : m
+        )
+      );
+      showAlert('Could not save', 'We couldn\'t update this milestone. Please try again.');
+    }
   };
 
   const toggleLearningActivity = (planId: string, actIndex: number) => {
@@ -356,8 +384,8 @@ export const GalleryScreen = () => {
                 style={[styles.galleryAction, Shadows.small]}
                 onPress={() => shareContent(`${selectedChild.firstName}'s Photo Album\n\n${filteredPhotos.length} photos from ${selectedChild.classroom || 'school'}\n\nShared from Little Journey`)}
               >
-                <Ionicons name="download-outline" size={20} color={Colors.primary} />
-                <Text style={styles.galleryActionText}>Download All</Text>
+                <Ionicons name="share-outline" size={20} color={Colors.primary} />
+                <Text style={styles.galleryActionText}>Share All</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.galleryAction, Shadows.small]}
@@ -574,8 +602,12 @@ export const GalleryScreen = () => {
                 <View key={plan.id} style={[styles.planCard, Shadows.small]}>
                   <View style={styles.planHeader}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.planTitle}>{plan.title}</Text>
-                      <Text style={styles.planWeek}>{plan.week}</Text>
+                      <Text style={styles.planTitle}>{plan.title || 'Weekly Learning Plan'}</Text>
+                      {(plan.weekStart || plan.week) && (
+                        <Text style={styles.planWeek}>
+                          {plan.weekStart ? `Week of ${formatDateShort(plan.weekStart)}` : plan.week}
+                        </Text>
+                      )}
                     </View>
                     <View style={[styles.planBadge, pct === 100 && styles.planBadgeComplete]}>
                       <Text style={[styles.planBadgeText, pct === 100 && styles.planBadgeTextComplete]}>
@@ -584,13 +616,17 @@ export const GalleryScreen = () => {
                     </View>
                   </View>
 
-                  <Text style={styles.planSubtitle}>Goals</Text>
-                  {(plan.goals ?? []).map((goal, i) => (
-                    <View key={i} style={styles.goalItem}>
-                      <Ionicons name="flag" size={14} color={Colors.primary} />
-                      <Text style={styles.goalText}>{goal}</Text>
-                    </View>
-                  ))}
+                  {(plan.goals?.length ?? 0) > 0 && (
+                    <>
+                      <Text style={styles.planSubtitle}>Goals</Text>
+                      {plan.goals!.map((goal, i) => (
+                        <View key={i} style={styles.goalItem}>
+                          <Ionicons name="flag" size={14} color={Colors.primary} />
+                          <Text style={styles.goalText}>{goal}</Text>
+                        </View>
+                      ))}
+                    </>
+                  )}
 
                   <Text style={styles.planSubtitle}>Activities</Text>
                   {plan.activities.map((act, i) => (
@@ -687,8 +723,8 @@ export const GalleryScreen = () => {
                   }
                 }}
               >
-                <Ionicons name="download-outline" size={22} color={Colors.primary} />
-                <Text style={styles.photoModalBtnText}>Save</Text>
+                <Ionicons name="share-outline" size={22} color={Colors.primary} />
+                <Text style={styles.photoModalBtnText}>Share</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.photoModalBtn}

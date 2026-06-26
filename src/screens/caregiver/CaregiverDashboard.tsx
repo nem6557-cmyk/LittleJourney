@@ -254,7 +254,7 @@ export const CaregiverDashboard = () => {
     setIncidentLocation('');
     setIncidentDesc('');
     setIncidentAction('');
-    showAlert('Incident Reported', `Incident report filed for ${selectedChild.firstName}. Parent has been notified.`);
+    showAlert('Incident Reported', `Incident report filed for ${selectedChild.firstName}. The parent will be notified.`);
   };
 
   const handleCheckOut = () => {
@@ -411,6 +411,9 @@ export const CaregiverDashboard = () => {
                 key={option.mood}
                 style={[styles.moodChip, selectedMood === option.mood && styles.moodChipActive]}
                 onPress={() => {
+                  // Guard against spammable taps: only log when the mood actually changes,
+                  // so rapid repeated taps on the same chip don't create duplicate entries.
+                  if (selectedMood === option.mood) return;
                   setSelectedMood(option.mood);
                   addTimelineEntry({ childId: selectedChild.id, type: 'mood', title: `Mood: ${option.label}`, mood: option.mood });
                 }}

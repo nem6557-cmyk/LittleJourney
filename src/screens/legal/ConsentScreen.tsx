@@ -29,6 +29,14 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({
   const [agreed, setAgreed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Gracefully handle empty/whitespace-only names so the consent copy always
+  // reads naturally (e.g. the caller currently passes childName="").
+  const trimmedChildName = childName?.trim();
+  const trimmedParentName = parentName?.trim();
+  const childLabel = trimmedChildName || 'your child';
+  const childPossessive = trimmedChildName ? `${trimmedChildName}'s` : "your child's";
+  const parentLabel = trimmedParentName || 'the parent/guardian';
+
   const handleConsent = async () => {
     if (!agreed) {
       Alert.alert('Required', 'Please review and check the consent checkbox to continue.');
@@ -58,7 +66,7 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>What We Need Your Consent For</Text>
         <Text style={styles.infoBody}>
-          {daycareName} uses LittleJourney to communicate with you about your child's day. To provide this service, we need your permission to collect and store information about {childName || 'your child'}.
+          {daycareName} uses LittleJourney to communicate with you about your child's day. To provide this service, we need your permission to collect and store information about {childLabel}.
         </Text>
       </View>
 
@@ -121,7 +129,7 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({
           color={agreed ? Colors.primary : Colors.textMuted}
         />
         <Text style={styles.checkboxText}>
-          I, {parentName || 'the parent/guardian'}, consent to the collection and use of {childName ? `${childName}'s` : "my child's"} information as described above. I understand I can withdraw this consent at any time.
+          I, {parentLabel}, consent to the collection and use of {childPossessive} information as described above. I understand I can withdraw this consent at any time.
         </Text>
       </TouchableOpacity>
 

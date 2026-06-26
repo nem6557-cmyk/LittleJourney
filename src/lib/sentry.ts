@@ -18,20 +18,40 @@ export function initSentry(): void {
     tracesSampleRate: config.environment === 'production' ? 0.2 : 1.0,
     debug: config.environment === 'development',
 
-    // Wizard additions: PII, logs, session replay, feedback
-    sendDefaultPii: true,
+    // COPPA/PII hardening: this is a children's app, so we must NOT let
+    // Sentry auto-attach PII (IPs, request bodies, etc.). Session replay is
+    // kept but fully masks all text and images so no child data is captured.
+    sendDefaultPii: false,
     enableLogs: true,
     replaysSessionSampleRate: 0.1,
     replaysOnErrorSampleRate: 1,
     integrations: [
-      Sentry.mobileReplayIntegration(),
+      Sentry.mobileReplayIntegration({
+        maskAllText: true,
+        maskAllImages: true,
+        maskAllVectors: true,
+      }),
       Sentry.feedbackIntegration(),
     ],
 
-    // Filter out noisy errors
+    // Filter out noisy errors and scrub obvious PII before sending.
     beforeSend(event) {
       // Don't send network errors in development
       if (config.environment === 'development') return null;
+
+      // Scrub server-side PII that Sentry may attach to the request context.
+      if (event.request) {
+        delete event.request.cookies;
+        delete event.request.data;
+        if (event.request.headers) {
+          delete event.request.headers['Authorization'];
+          delete event.request.headers['Cookie'];
+        }
+      }
+      // Never leak the device IP address.
+      if (event.user) {
+        delete event.user.ip_address;
+      }
 
       // Filter out common non-actionable errors
       const message = event.exception?.values?.[0]?.value || '';

@@ -1,3 +1,12 @@
+/**
+ * Standalone legal screen — the app's Privacy Policy.
+ *
+ * NOTE: This component is not yet wired into navigation. It is intended to be
+ * linked from Profile (Privacy section), the COPPA ConsentScreen, and the
+ * SignUp flow. Render it as a modal/route and pass `onClose` to dismiss.
+ * Do not delete — it is required content for COPPA/FERPA compliance and app
+ * store review.
+ */
 import React from 'react';
 import { ScrollView, Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
