@@ -38,11 +38,13 @@ export const DailyReportScreen = () => {
 
   const childInitial = selectedChild.firstName.charAt(0);
 
-  // Derive caregiver from today's entries
-  const todayCaregiver = useMemo(() => {
-    const caregiverEntry = childEntries.find((e) => e.createdBy.role === 'caregiver');
-    return caregiverEntry?.createdBy || null;
-  }, [childEntries]);
+  // Derive caregiver + their note from today's entries
+  const caregiverEntry = useMemo(
+    () => childEntries.find((e) => e.createdBy.role === 'caregiver' && e.description?.trim()) || null,
+    [childEntries]
+  );
+  const todayCaregiver = caregiverEntry?.createdBy || null;
+  const caregiverNote = caregiverEntry?.description?.trim() || '';
   const caregiverName = todayCaregiver?.name || 'Your caregiver';
   const caregiverInitial = caregiverName.replace(/^(Ms\.|Mr\.|Mrs\.|Dr\.)\s*/, '').charAt(0);
 
@@ -259,7 +261,7 @@ export const DailyReportScreen = () => {
         </View>
 
         {/* Caregiver Note */}
-        {childEntries.length > 0 && (
+        {caregiverNote !== '' && (
           <View style={[styles.section, Shadows.small]}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionIcon}>💌</Text>
@@ -270,7 +272,7 @@ export const DailyReportScreen = () => {
                 <Text style={styles.caregiverAvatarText}>{caregiverInitial}</Text>
               </View>
               <Text style={styles.caregiverNote}>
-                {selectedChild.firstName} had a wonderful day! Keep up the great work at home! 💝 — {caregiverName}
+                {caregiverNote} — {caregiverName}
               </Text>
             </View>
           </View>
