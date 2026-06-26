@@ -398,39 +398,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return { daycareId: '', error: 'Only admin users can create a daycare' };
     }
 
-    // Create daycare
-    const { data: newDaycare, error: dcError } = await supabase
-      .from('daycares')
-      .insert(data)
-      .select()
-      .single();
-
-    if (dcError || !newDaycare) {
-      return { daycareId: '', error: dcError?.message || 'Failed to create daycare' };
-    }
-
-    // Link user to daycare
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ daycare_id: newDaycare.id, role: 'admin' })
-      .eq('id', user.id);
-
-    if (profileError) {
-      return { daycareId: newDaycare.id, error: 'Daycare created but failed to link profile' };
-    }
-
-    // Create default subscription (trial)
-    await supabase.from('subscriptions').insert({
-      daycare_id: newDaycare.id,
-      plan_tier: 'starter',
-      status: 'trialing',
-      current_period_end: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    // Atomic server-side creation (daycare + profile link + trial subscription).
+    // Done via RPC because the profiles WITH CHECK policy now blocks changing
+    // role/daycare_id through a direct client UPDATE.
+    const { data: result, error: rpcError } = await supabase.rpc('create_daycare', {
+      p_name: data.name,
+      p_address: data.address ?? null,
+      p_city: data.city ?? null,
+      p_state: data.state ?? null,
+      p_zip: data.zip ?? null,
+      p_phone: data.phone ?? null,
+      p_email: data.email ?? null,
     });
+
+    if (rpcError) {
+      return { daycareId: '', error: rpcError.message || 'Failed to create daycare' };
+    }
+    if (result?.error) {
+      return { daycareId: '', error: result.error as string };
+    }
 
     // Refresh profile to pick up daycare_id
     await fetchProfile(user.id);
 
-    return { daycareId: newDaycare.id, error: null };
+    return { daycareId: (result?.daycare_id as string) || '', error: null };
   }, [user, fetchProfile]);
 
   // ----------------------------------------------------------

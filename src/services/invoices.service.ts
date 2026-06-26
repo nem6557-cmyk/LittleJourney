@@ -38,8 +38,12 @@ export const invoicesService = {
     return data;
   },
 
-  updateInvoiceStatus: async (invoiceId: string, status: string, paidAt?: string) => {
-    const updates: any = { status };
+  updateInvoiceStatus: async (
+    invoiceId: string,
+    status: Database['public']['Tables']['invoices']['Row']['status'],
+    paidAt?: string,
+  ) => {
+    const updates: Database['public']['Tables']['invoices']['Update'] = { status };
     if (paidAt) updates.paid_at = paidAt;
     const { data, error } = await supabase
       .from('invoices')

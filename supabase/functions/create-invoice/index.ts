@@ -74,6 +74,18 @@ serve(async (req) => {
       }
     }
 
+    // Validate that the line items actually sum to the invoice total before
+    // creating anything in Stripe — otherwise the displayed total and the
+    // platform fee (computed from amount_cents) would diverge.
+    const lineItemsForCheck = (invoice.line_items as Array<{ amount?: number }>) || [];
+    const lineSum = lineItemsForCheck.reduce((s, it) => s + (it.amount || 0), 0);
+    if (lineSum !== invoice.amount_cents) {
+      return new Response(
+        JSON.stringify({ error: `Line items ($${lineSum / 100}) do not sum to invoice total ($${invoice.amount_cents / 100}).` }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
     // Create Stripe Invoice (idempotencyKey guards against duplicate creation
     // if this function is retried before the DB write below lands).
     const stripeInvoice = await stripe.invoices.create({

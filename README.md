@@ -36,7 +36,7 @@ A modern daycare management app that keeps parents connected to their child's da
 | State | React Context + React Query |
 | Navigation | React Navigation (Bottom Tabs + Stack) |
 | Validation | Zod 4 |
-| Testing | Jest + ts-jest (84 unit tests) |
+| Testing | Jest + ts-jest (100 unit tests) |
 | Linting | ESLint + Prettier |
 
 ## Project Structure

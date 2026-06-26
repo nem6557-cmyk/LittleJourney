@@ -110,14 +110,16 @@ serve(async (req) => {
             stripe_invoice_id: invoice.id,
           }).eq('id', invoiceId);
 
-          // Send notification to parent
-          const { data: dbInvoice } = await supabase.from('invoices').select('parent_id, description').eq('id', invoiceId).single();
+          // Send notification to parent (scoped to the daycare + deep-linkable).
+          const { data: dbInvoice } = await supabase.from('invoices').select('parent_id, daycare_id, description').eq('id', invoiceId).single();
           if (dbInvoice) {
             await supabase.from('notifications').insert({
               user_id: dbInvoice.parent_id,
+              daycare_id: dbInvoice.daycare_id,
               type: 'alert',
               title: 'Payment Confirmed',
               body: `Your payment for "${dbInvoice.description}" has been received.`,
+              data: { invoice_id: invoiceId },
             });
           }
         }
