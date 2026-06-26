@@ -32,6 +32,16 @@ serve(async (req) => {
 
     if (!invoice) return new Response('Invoice not found', { status: 404 });
 
+    // Authorize: caller must be an admin of this invoice's daycare
+    const { data: callerProfile } = await supabase.from('profiles')
+      .select('role, daycare_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!callerProfile || callerProfile.role !== 'admin' || callerProfile.daycare_id !== invoice.daycare_id) {
+      return new Response('Forbidden', { status: 403 });
+    }
+
     const stripeAccountId = (invoice as any).daycare?.stripe_account_id;
     if (!stripeAccountId) {
       return new Response('Daycare has not completed Stripe onboarding', { status: 400 });

@@ -31,8 +31,24 @@ serve(async (req) => {
 
     const { plan, daycareId, returnUrl } = await req.json();
 
-    // Get or create Stripe customer
-    const { data: profile } = await supabase.from('profiles').select('email, first_name, last_name').eq('id', user.id).single();
+    // Get caller profile (also used for authorization below)
+    const { data: profile } = await supabase.from('profiles')
+      .select('email, first_name, last_name, role, daycare_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile) return new Response('Forbidden', { status: 403 });
+
+    // Authorize daycare-subscription plans: caller must be an admin, and the
+    // daycare is taken from their own profile (never trust a client-supplied id).
+    const isParentPlanRequest = plan === 'parent_premium';
+    let effectiveDaycareId = daycareId;
+    if (!isParentPlanRequest) {
+      if (profile.role !== 'admin' || !profile.daycare_id) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      effectiveDaycareId = profile.daycare_id;
+    }
 
     let customerId: string;
     const customers = await stripe.customers.list({ email: profile?.email, limit: 1 });
@@ -50,13 +66,13 @@ serve(async (req) => {
     const priceId = PRICE_IDS[plan];
     if (!priceId) return new Response('Invalid plan', { status: 400 });
 
-    const isParentPlan = plan === 'parent_premium';
+    const isParentPlan = isParentPlanRequest;
     const metadata: Record<string, string> = {};
     if (isParentPlan) {
       metadata.parent_id = user.id;
-      metadata.daycare_id = daycareId;
+      metadata.daycare_id = effectiveDaycareId;
     } else {
-      metadata.daycare_id = daycareId;
+      metadata.daycare_id = effectiveDaycareId;
       metadata.plan_tier = plan;
     }
 

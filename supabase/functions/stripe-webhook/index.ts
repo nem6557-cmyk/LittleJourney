@@ -33,15 +33,23 @@ serve(async (req) => {
         const session = event.data.object as Stripe.Checkout.Session;
         const daycareId = session.metadata?.daycare_id;
         const parentId = session.metadata?.parent_id;
+        const subscriptionId = session.subscription as string;
+
+        // Use Stripe's actual period end rather than assuming 30 days.
+        let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        if (subscriptionId) {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId);
+          periodEnd = new Date(sub.current_period_end * 1000).toISOString();
+        }
 
         if (daycareId && !parentId) {
           // Daycare subscription
           await supabase.from('subscriptions').upsert({
             daycare_id: daycareId,
-            stripe_subscription_id: session.subscription as string,
+            stripe_subscription_id: subscriptionId,
             plan_tier: session.metadata?.plan_tier || 'starter',
             status: 'active',
-            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            current_period_end: periodEnd,
           }, { onConflict: 'daycare_id' });
 
           await supabase.from('daycares').update({
@@ -54,10 +62,10 @@ serve(async (req) => {
           await supabase.from('parent_subscriptions').upsert({
             parent_id: parentId,
             daycare_id: daycareId!,
-            stripe_subscription_id: session.subscription as string,
+            stripe_subscription_id: subscriptionId,
             plan: 'premium',
             status: 'active',
-            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            current_period_end: periodEnd,
           }, { onConflict: 'parent_id,daycare_id' });
         }
         break;

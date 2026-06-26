@@ -399,60 +399,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const redeemInviteCode = useCallback(async (code: string) => {
     if (!user) return { error: 'Not authenticated' };
 
-    // Look up the invite code
-    const { data: invite, error: lookupError } = await supabase
-      .from('invite_codes')
-      .select('*')
-      .eq('code', code.toUpperCase())
-      .is('used_by', null)
-      .gt('expires_at', new Date().toISOString())
-      .single();
+    // Redemption runs server-side (SECURITY DEFINER RPC): it validates the
+    // exact code, marks it used, and links the profile + role atomically.
+    // The client can no longer enumerate codes or pick its own role.
+    const { data, error: rpcError } = await supabase.rpc('redeem_invite_code', {
+      p_code: code.toUpperCase(),
+    });
 
-    if (lookupError || !invite) {
-      return { error: 'Invalid or expired invite code' };
-    }
-
-    // Mark code as used
-    const { error: redeemError } = await supabase
-      .from('invite_codes')
-      .update({ used_by: user.id, used_at: new Date().toISOString() })
-      .eq('id', invite.id);
-
-    if (redeemError) {
+    if (rpcError) {
       return { error: 'Failed to redeem invite code' };
     }
-
-    // Link user to daycare with the specified role
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        daycare_id: invite.daycare_id,
-        role: invite.role as any,
-      })
-      .eq('id', user.id);
-
-    if (profileError) {
-      return { error: 'Failed to link to daycare' };
+    if (data?.error) {
+      return { error: data.error as string };
     }
 
-    // If parent invite with a child_id, create parent-child link
-    if (invite.role === 'parent' && invite.child_id) {
-      await supabase.from('parent_children').insert({
-        parent_id: user.id,
-        child_id: invite.child_id,
-        relationship: 'parent',
-      });
-    }
-
-    // If caregiver invite with a classroom_id, create assignment
-    if (invite.role === 'caregiver' && invite.classroom_id) {
-      await supabase.from('caregiver_classrooms').insert({
-        caregiver_id: user.id,
-        classroom_id: invite.classroom_id,
-      });
-    }
-
-    // Refresh
+    // Refresh local profile to pick up the new daycare/role.
     await fetchProfile(user.id);
 
     return { error: null };
