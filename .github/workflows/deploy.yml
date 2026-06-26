@@ -40,7 +40,8 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Lint check
-        run: npx expo lint 2>/dev/null || echo "No lint config — skipping"
+        # Fails on lint errors; warnings (e.g. no-explicit-any) do not fail CI.
+        run: npm run lint
 
   # ──────────────────────────────────────
   # Tests
@@ -60,7 +61,7 @@ jobs:
       - run: npm ci
 
       - name: Run Jest tests
-        run: npx jest --passWithNoTests --ci --coverage
+        run: npx jest --ci --coverage
         env:
           EXPO_PUBLIC_SUPABASE_URL: https://test.supabase.co
           EXPO_PUBLIC_SUPABASE_ANON_KEY: test-key
