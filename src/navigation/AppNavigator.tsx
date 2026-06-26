@@ -124,7 +124,15 @@ const MainAppNavigator = () => {
           },
         })}
       >
-        {currentRole === 'parent' || currentRole === 'family' || currentRole === 'pediatrician' ? (
+        {currentRole === 'pediatrician' ? (
+          // Pediatricians get a scoped, read-only view: child timeline + profile
+          // only — no billing, family network, or messaging.
+          <>
+            <Tab.Screen name="Home" component={TimelineScreen} />
+            <Tab.Screen name="Report" component={DailyReportScreen} />
+            <Tab.Screen name="Profile" component={ProfileScreen} />
+          </>
+        ) : currentRole === 'parent' || currentRole === 'family' ? (
           <>
             <Tab.Screen name="Home" component={TimelineScreen} />
             <Tab.Screen name="Messages" component={MessagesScreen} />

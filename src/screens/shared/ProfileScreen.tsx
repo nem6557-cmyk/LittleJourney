@@ -13,13 +13,15 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { trackScreen } from '../../lib/analytics';
+import { PaymentMethodsScreen } from '../payments/PaymentMethodsScreen';
+import { SubscriptionScreen } from '../payments/SubscriptionScreen';
 
 const PREFS_STORAGE_KEY = '@littlejourney/user_preferences';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
 type SubScreen = null | 'child_profile' | 'family' | 'pickups' | 'health' | 'invoices' | 'invoice_detail' | 'notifications' | 'about'
-  | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'lesson_plans' | 'incidents';
+  | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'subscription' | 'lesson_plans' | 'incidents';
 
 interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
@@ -188,7 +190,7 @@ export const ProfileScreen = () => {
       items: [
         { icon: 'card-outline', label: 'Payment Methods', subtitle: paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file', sub: 'payment_methods' },
         { icon: 'receipt-outline', label: 'Invoices & Receipts', subtitle: pendingAmount > 0 ? `$${pendingAmount.toFixed(2)} pending` : 'All paid', sub: 'invoices' },
-        { icon: 'document-text-outline', label: 'Tax Documents', subtitle: '2025 tax receipt available' },
+        { icon: 'star-outline', label: 'Subscription', subtitle: 'Manage your plan', sub: 'subscription' },
       ],
     },
     {
@@ -788,30 +790,10 @@ export const ProfileScreen = () => {
           </View>
         );
       case 'payment_methods':
-        return (
-          <View>
-            <Text style={styles.subTitle}>Payment Methods</Text>
-            <View style={styles.savedCardRow}>
-              <View style={styles.savedCardIcon}>
-                <Ionicons name="card" size={24} color={Colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.prefLabel}>{paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file'}</Text>
-                <Text style={styles.prefDesc}>{paymentCard ? 'Default payment method' : 'Add a payment method to get started'}</Text>
-              </View>
-              {paymentCard && (
-                <View style={[styles.verifiedBadge, { backgroundColor: Colors.successLight }]}>
-                  <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-                  <Text style={{ fontSize: FontSizes.xs, color: Colors.success, fontWeight: '600' }}>Active</Text>
-                </View>
-              )}
-            </View>
-            <TouchableOpacity style={styles.addButton} onPress={() => showAlert('Add Card', 'Card entry form would appear here with Stripe/payment integration.')}>
-              <Ionicons name="add-circle-outline" size={18} color={Colors.primary} />
-              <Text style={styles.addButtonText}>Add Payment Method</Text>
-            </TouchableOpacity>
-          </View>
-        );
+        // Real Stripe SetupIntent-backed card management.
+        return <PaymentMethodsScreen onClose={() => setSubScreen(null)} />;
+      case 'subscription':
+        return <SubscriptionScreen type={currentRole === 'admin' ? 'daycare' : 'parent'} onClose={() => setSubScreen(null)} />;
       case 'lesson_plans':
         return (
           <View>
