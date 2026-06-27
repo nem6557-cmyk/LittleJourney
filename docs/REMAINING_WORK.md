@@ -42,15 +42,21 @@ you can provision. The app code has clean integration points where applicable.
 | True end-to-end encryption | crypto design + key management | Copy now says "Encrypted & Secure" (TLS + RLS + at-rest), not E2E. |
 | Hosted legal/support pages + Universal Links | **littlejourney.app** hosting | In-app legal screens work; deep-link verification needs the domain. |
 
-## 🟡 Deferred (self-contained, lower priority — can be done anytime)
+## 🟢 Self-contained deferred — NOW DONE (commit 27331c7)
 
-- Multi-photo gallery viewer / swipe + zoom; download-to-device (expo-media-library).
-- Daily-report persistence + date navigation (currently computed for today only).
-- In-thread message search, typing/presence indicators, message edit/delete.
-- Per-child COPPA consent with a full audit trail (currently one profile-level flag).
-- Device-calendar / reminders integration (expo-calendar).
-- Biometric login (expo-local-authentication) — toggle exists, not enforced.
-- Real nap-session start/end tracking (currently heuristic).
-- Reduce remaining `no-explicit-any` warnings (non-blocking).
+- ✅ Multi-photo gallery viewer (every photo a tile; swipe carousel + dots).
+- ✅ Photo download-to-device (expo-media-library, lazy + web-guarded).
+- ✅ Daily-report date navigation (prev/next day, date-scoped stats).
+- ✅ In-thread message search + message edit/delete (soft-delete tombstone).
+- ✅ Per-child COPPA consent audit trail (coppa_consents + policy version + signed name).
+- ✅ Biometric login enforced (expo-local-authentication: hardware/enroll check + auth).
+- ✅ Real nap-session start/end duration tracking.
+
+## 🟡 Still deferred (lower value / not yet done)
+
+- Typing/presence indicators in messaging (needs Realtime presence channels).
+- Device-calendar / reminders integration (expo-calendar) — not added.
+- Reduce remaining ~85 `no-explicit-any` warnings — intentionally left
+  (non-blocking; churning working DB-mapping code risks regressions).
 
 See `docs/FUNCTIONALITY_PUNCH_LIST.md` for the full itemized list with file:line.
