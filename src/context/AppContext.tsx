@@ -18,6 +18,7 @@ import { incidentsService } from '../services/incidents.service';
 import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
 import { attendanceService } from '../services/attendance.service';
+import { notificationsService } from '../services/notifications.service';
 import { registerForPushNotifications, dispatchPushNotification } from '../lib/notifications';
 import { onNetworkChange, processPendingMutations } from '../lib/offline';
 
@@ -485,6 +486,63 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
+        // ── Fetch notifications for this user ──
+        {
+          const { data: notifData } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('user_id', profile.id)
+            .order('created_at', { ascending: false })
+            .limit(100);
+          if (!cancelled && notifData) {
+            const mappedNotifs: Notification[] = notifData.map((n: any) => ({
+              id: n.id,
+              type: n.type || 'alert',
+              title: n.title,
+              body: n.body,
+              timestamp: n.created_at,
+              read: !!n.read_at, // read state derived from DB, not hardcoded
+              childId: n.data?.child_id || undefined,
+              actionRoute: n.data?.route || undefined,
+            }));
+            setNotifications(mappedNotifs);
+          }
+        }
+
+        // ── Fetch incidents (parent: their children; staff: whole daycare) ──
+        if (profile.daycare_id) {
+          const { data: incData } = await supabase
+            .from('incidents')
+            .select('*, child:children!child_id(first_name, last_name), reporter:profiles!reported_by(id, first_name, last_name, role)')
+            .eq('daycare_id', profile.daycare_id)
+            .order('created_at', { ascending: false })
+            .limit(100);
+          if (!cancelled && incData) {
+            const mappedIncidents: IncidentReport[] = incData.map((i: any) => ({
+              id: i.id,
+              childId: i.child_id,
+              daycareId: i.daycare_id,
+              childName: i.child ? `${i.child.first_name || ''} ${i.child.last_name || ''}`.trim() : '',
+              reportedBy: {
+                id: i.reporter?.id || i.reported_by,
+                name: i.reporter ? `${i.reporter.first_name || ''} ${i.reporter.last_name || ''}`.trim() : 'Staff',
+                role: (i.reporter?.role || 'caregiver') as UserRole,
+                email: '',
+              },
+              timestamp: i.created_at,
+              type: i.type,
+              severity: i.severity,
+              location: i.location || undefined,
+              description: i.description,
+              actionTaken: i.action_taken || '',
+              parentNotified: !!i.parent_notified_at,
+              witnessName: i.witness_name || undefined,
+              photos: i.photo_urls || undefined,
+            }));
+            setIncidents(mappedIncidents);
+          }
+        }
+
         // ── Register push notification token (once per session) ──
         if (!pushRegistered.current && Platform.OS !== 'web') {
           pushRegistered.current = true;
@@ -849,11 +907,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         )
       );
 
-      // Persist to Supabase
+      // Persist to Supabase and reconcile the temp id with the real DB id so a
+      // later delete targets the correct row (and remove the optimistic comment
+      // on failure rather than leaving a phantom).
       if (auth.profile) {
-        timelineService.addComment(entryId, auth.profile.id, text).catch((err) =>
-          console.warn('[AppContext] Failed to persist comment:', err)
-        );
+        timelineService
+          .addComment(entryId, auth.profile.id, text)
+          .then((row) => {
+            const realId = (row as { id?: string } | null)?.id;
+            if (!realId) return;
+            setTimelineEntries((prev) =>
+              prev.map((e) =>
+                e.id === entryId
+                  ? { ...e, comments: (e.comments || []).map((c) => (c.id === tempId ? { ...c, id: realId } : c)) }
+                  : e
+              )
+            );
+          })
+          .catch((err) => {
+            console.warn('[AppContext] Failed to persist comment:', err);
+            setTimelineEntries((prev) =>
+              prev.map((e) =>
+                e.id === entryId
+                  ? { ...e, comments: (e.comments || []).filter((c) => c.id !== tempId) }
+                  : e
+              )
+            );
+          });
       }
     },
     [currentUser, auth.profile]
@@ -862,27 +942,32 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // ── Reactions ──
   const toggleReaction = useCallback(
     (entryId: string, emoji: string) => {
-      setTimelineEntries((prev) =>
-        prev.map((e) => {
-          if (e.id !== entryId) return e;
-          const existing = (e.reactions || []).find(
-            (r) => r.userId === currentUser.id && r.emoji === emoji
-          );
-          if (existing) {
-            return { ...e, reactions: (e.reactions || []).filter((r) => r !== existing) };
-          }
-          return {
-            ...e,
-            reactions: [...(e.reactions || []), { userId: currentUser.id, emoji, timestamp: new Date().toISOString() }],
-          };
-        })
-      );
-
-      // Persist to Supabase
-      if (auth.profile) {
-        timelineService.toggleReaction(entryId, auth.profile.id, emoji).catch((err) =>
-          console.warn('[AppContext] Failed to persist reaction:', err)
+      // Self-inverse toggle: applying it again reverts it (used for rollback).
+      const applyToggle = () =>
+        setTimelineEntries((prev) =>
+          prev.map((e) => {
+            if (e.id !== entryId) return e;
+            const existing = (e.reactions || []).find(
+              (r) => r.userId === currentUser.id && r.emoji === emoji
+            );
+            if (existing) {
+              return { ...e, reactions: (e.reactions || []).filter((r) => r !== existing) };
+            }
+            return {
+              ...e,
+              reactions: [...(e.reactions || []), { userId: currentUser.id, emoji, timestamp: new Date().toISOString() }],
+            };
+          })
         );
+
+      applyToggle();
+
+      // Persist to Supabase; revert the optimistic toggle if it fails.
+      if (auth.profile) {
+        timelineService.toggleReaction(entryId, auth.profile.id, emoji).catch((err) => {
+          console.warn('[AppContext] Failed to persist reaction, reverting:', err);
+          applyToggle();
+        });
       }
     },
     [currentUser.id, auth.profile]
@@ -901,7 +986,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // ── Update timeline entry ──
   const updateTimelineEntry = useCallback((entryId: string, updates: Partial<TimelineEntry>) => {
     setTimelineEntries((prev) => prev.map((e) => e.id === entryId ? { ...e, ...updates } : e));
-  }, []);
+    if (auth.profile) {
+      // Map the editable app fields onto the DB columns.
+      const dbUpdates: Record<string, unknown> = {};
+      if (updates.title !== undefined) dbUpdates.title = updates.title;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.mood !== undefined) dbUpdates.mood = updates.mood;
+      if (updates.details !== undefined) dbUpdates.metadata = updates.details;
+      if (Object.keys(dbUpdates).length > 0) {
+        timelineService.updateEntry(entryId, dbUpdates as any).catch((err) =>
+          console.warn('[AppContext] Failed to persist timeline entry update:', err)
+        );
+      }
+    }
+  }, [auth.profile]);
 
   // ── Delete comment ──
   const deleteComment = useCallback((entryId: string, commentId: string) => {
@@ -1093,11 +1191,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
-  }, []);
+    if (auth.profile) {
+      notificationsService.markRead(id).catch((err) =>
+        console.warn('[AppContext] Failed to persist notification read:', err)
+      );
+    }
+  }, [auth.profile]);
 
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
+    if (auth.profile) {
+      notificationsService.markAllRead(auth.profile.id).catch((err) =>
+        console.warn('[AppContext] Failed to persist mark-all-read:', err)
+      );
+    }
+  }, [auth.profile]);
 
   // ── Incidents ──
   const addIncident = useCallback(
@@ -1154,10 +1262,32 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // ── Attendance ──
   const updateAttendance = useCallback((childId: string, update: Partial<AttendanceRecord>) => {
+    let merged: AttendanceRecord | undefined;
     setAttendance((prev) =>
-      prev.map((a) => (a.childId === childId ? { ...a, ...update } : a))
+      prev.map((a) => {
+        if (a.childId !== childId) return a;
+        merged = { ...a, ...update };
+        return merged;
+      })
     );
-  }, []);
+    // Persist the change (status / note / times) by upserting the child+date row.
+    if (auth.profile?.daycare_id && merged) {
+      const today = merged.date || new Date().toISOString().split('T')[0];
+      attendanceService
+        .checkIn({
+          child_id: childId,
+          daycare_id: auth.profile.daycare_id,
+          date: today,
+          status: merged.status,
+          check_in_at: merged.checkInTime ?? null,
+          check_in_by: merged.checkInBy ?? null,
+          check_out_at: merged.checkOutTime ?? null,
+          check_out_by: merged.checkOutBy ?? null,
+          notes: merged.note ?? null,
+        })
+        .catch((err) => console.warn('[AppContext] Failed to persist attendance update:', err));
+    }
+  }, [auth.profile]);
 
   // ── Invoices ──
   // Payment goes through Stripe: the create-invoice edge function finalizes a
@@ -1274,7 +1404,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [timelineEntries, selectedChild]);
 
   // ── Data persistence ──
-  const STORAGE_KEY = 'littlejourney_data';
+  // Namespace the offline cache per user so one account never loads another's
+  // cached data. Falls back to a guest bucket when signed out.
+  const CACHE_PREFIX = 'littlejourney_data_';
+  const cacheUserId = auth.user?.id || (auth.isDemoMode ? `demo_${currentRole}` : 'guest');
+  const STORAGE_KEY = `${CACHE_PREFIX}${cacheUserId}`;
 
   // Save state to AsyncStorage whenever key data changes
   useEffect(() => {
@@ -1298,7 +1432,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // Debounce saves
     const timer = setTimeout(saveData, 500);
     return () => clearTimeout(timer);
-  }, [timelineEntries, messages, conversations, notifications, incidents, attendance, invoices, isCheckedIn]);
+  }, [STORAGE_KEY, timelineEntries, messages, conversations, notifications, incidents, attendance, invoices, isCheckedIn]);
+
+  // One-time migration/cleanup: drop the old un-namespaced global cache key so a
+  // previous user's data can't bleed in.
+  useEffect(() => {
+    AsyncStorage.removeItem('littlejourney_data').catch(() => {});
+  }, []);
 
   // Load persisted state and auth on mount
   useEffect(() => {
@@ -1314,6 +1454,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
+        // Load this user's namespaced cache (offline fallback).
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const data = JSON.parse(raw);
@@ -1333,7 +1474,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
     };
     loadData();
-  }, []);
+    // Re-run when the namespaced key changes (user logs in/out) so we never show
+    // a different account's cached data.
+  }, [STORAGE_KEY]);
 
 
 
