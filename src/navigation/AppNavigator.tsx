@@ -34,6 +34,10 @@ import { AdminDashboard } from '../screens/admin/AdminDashboard';
 import { ManageChildrenScreen } from '../screens/admin/ManageChildrenScreen';
 import { ManageStaffScreen } from '../screens/admin/ManageStaffScreen';
 import { InviteCodesScreen } from '../screens/admin/InviteCodesScreen';
+import { ManageClassroomsScreen } from '../screens/admin/ManageClassroomsScreen';
+import { ManageCalendarScreen } from '../screens/admin/ManageCalendarScreen';
+import { SendAnnouncementScreen } from '../screens/admin/SendAnnouncementScreen';
+import { GenerateReportScreen } from '../screens/admin/GenerateReportScreen';
 
 const Tab = createBottomTabNavigator();
 const AuthStack = createStackNavigator();
@@ -78,6 +82,10 @@ const AdminNavigator = () => (
     <AdminStack.Screen name="ManageChildren" component={ManageChildrenScreen} />
     <AdminStack.Screen name="ManageStaff" component={ManageStaffScreen} />
     <AdminStack.Screen name="InviteCodes" component={InviteCodesScreen} />
+    <AdminStack.Screen name="ManageClassrooms" component={ManageClassroomsScreen} />
+    <AdminStack.Screen name="ManageCalendar" component={ManageCalendarScreen} />
+    <AdminStack.Screen name="SendAnnouncement" component={SendAnnouncementScreen} />
+    <AdminStack.Screen name="GenerateReport" component={GenerateReportScreen} />
   </AdminStack.Navigator>
 );
 
