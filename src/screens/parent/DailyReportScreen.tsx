@@ -121,19 +121,20 @@ export const DailyReportScreen = () => {
       } else {
         showAlert('PDF Saved', `Report saved to: ${uri}`);
       }
-    } catch {
-      showAlert('Report Saved', `${selectedChild.firstName}'s daily report has been saved.`);
+    } catch (err) {
+      console.warn('[DailyReport] PDF export failed:', err);
+      showAlert('Export Failed', 'We could not generate the PDF report. Please try again.');
     }
   };
 
   const handleThank = () => {
-    // Find the conversation with the caregiver (not hardcoded)
+    // Send only into a real caregiver conversation — never fall back to
+    // conversations[0], which could thank an admin or the wrong caregiver.
     const caregiverConv = conversations.find((c) =>
       c.participants.some((p) => p.role === 'caregiver' && p.id !== currentUser.id)
     );
-    const convId = caregiverConv?.id || conversations[0]?.id;
+    const convId = caregiverConv?.id;
     if (!convId) {
-      // No conversation to send into — don't claim success.
       showAlert(
         'No conversation yet',
         `You don't have a message thread with ${caregiverName} yet. Start a conversation from Messages to send your thanks.`
@@ -221,7 +222,7 @@ export const DailyReportScreen = () => {
           ))}
         </View>
 
-        {/* AI Narrative — dynamically generated */}
+        {/* Daily narrative — generated from the day's logged activities (template-based, not AI) */}
         <View style={[styles.section, styles.narrativeSection, Shadows.small]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionIcon}>📖</Text>

@@ -201,7 +201,7 @@ export const MessagesScreen = () => {
           ListHeaderComponent={
             <View style={styles.encryptionNotice}>
               <Ionicons name="lock-closed" size={12} color={Colors.textMuted} />
-              <Text style={styles.encryptionText}>All messages are encrypted and private</Text>
+              <Text style={styles.encryptionText}>Messages are private and secure</Text>
             </View>
           }
           ListEmptyComponent={
@@ -365,22 +365,25 @@ export const MessagesScreen = () => {
               onPress={async () => {
                 const uploadAndSendPhoto = async (uri: string) => {
                   setIsUploadingPhoto(true);
-                  try {
-                    const daycareId = authProfile?.daycare_id;
-                    if (daycareId) {
-                      const ext = uri.split('.').pop() || 'jpg';
-                      const filename = `msg_${Date.now()}.${ext}`;
-                      const path = `${daycareId}/messages/${filename}`;
-                      const uploadedUrl = await storageService.uploadImage('timelinePhotos', path, uri);
-                      sendMessage(`[photo:${uploadedUrl}]`, false, activeConversationId || undefined);
-                    } else {
-                      // Fallback: send local URI (won't persist across devices)
-                      sendMessage(`[photo:${uri}]`, false, activeConversationId || undefined);
-                    }
-                  } catch (err: any) {
-                    console.warn('[Messages] Photo upload failed:', err);
-                    // Fallback to local URI on error
+                  const daycareId = authProfile?.daycare_id;
+                  // Demo/offline (no daycare): there's no backend, so send the
+                  // local URI for the local-only demo experience.
+                  if (!daycareId) {
                     sendMessage(`[photo:${uri}]`, false, activeConversationId || undefined);
+                    setIsUploadingPhoto(false);
+                    return;
+                  }
+                  try {
+                    const ext = uri.split('.').pop() || 'jpg';
+                    const filename = `msg_${Date.now()}.${ext}`;
+                    const path = `${daycareId}/messages/${filename}`;
+                    const uploadedUrl = await storageService.uploadImage('timelinePhotos', path, uri);
+                    sendMessage(`[photo:${uploadedUrl}]`, false, activeConversationId || undefined);
+                  } catch (err) {
+                    // Do NOT send a local file:// URI — it's unviewable for the
+                    // recipient. Surface the failure instead.
+                    console.warn('[Messages] Photo upload failed:', err);
+                    showAlert('Upload Failed', 'Your photo could not be sent. Please check your connection and try again.');
                   } finally {
                     setIsUploadingPhoto(false);
                   }

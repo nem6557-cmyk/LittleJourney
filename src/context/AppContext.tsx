@@ -729,15 +729,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Only fall back to sample data in demo mode (no auth profile = Supabase not configured).
   const allChildren = useMemo(() => {
     if (fetchedChildren.length > 0) return fetchedChildren;
-    if (!auth.profile) {
-      // Demo mode — show sample data
+    // Demo mode sets a fake profile, so check isDemoMode too (not just !profile)
+    // — otherwise demo sessions showed an empty child ("Unknown" name).
+    if (!auth.profile || auth.isDemoMode) {
       return currentRole === 'parent' ? [layla, adam] : classroomChildren;
     }
     // Supabase configured but no children yet — return empty
     return [];
-  }, [fetchedChildren, auth.profile, currentRole]);
+  }, [fetchedChildren, auth.profile, auth.isDemoMode, currentRole]);
 
-  const emptyChild: Child = { id: '', firstName: '', lastName: '', dateOfBirth: '', classroom: '', allergies: [], emergencyContacts: [], authorizedPickups: [] };
+  // Graceful placeholder so screens never render a blank/"Unknown" name when no
+  // child is loaded yet (e.g. a parent whose children haven't synced).
+  const emptyChild: Child = { id: '', firstName: 'Your child', lastName: '', dateOfBirth: '', classroom: '', allergies: [], emergencyContacts: [], authorizedPickups: [] };
   const selectedChild = allChildren.find((c) => c.id === selectedChildId) || allChildren[0] || emptyChild;
 
   const login = useCallback((role: UserRole) => {

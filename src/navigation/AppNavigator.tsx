@@ -97,17 +97,23 @@ const MainAppNavigator = () => {
           tabBarIcon: ({ focused, color }) => {
             const icons = tabIconMap[route.name] || tabIconMap.Home;
             const iconName = focused ? icons.focused : icons.default;
+            // The icon is decorative — React Navigation already labels the tab
+            // from the route name, so we must NOT add another accessibilityLabel
+            // here (it would stutter, e.g. "Dashboard tab Dashboard tab Dashboard").
             return (
-              <View accessibilityLabel={`${route.name} tab`} accessibilityRole="tab">
+              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                 <Ionicons name={iconName} size={22} color={color} />
                 {route.name === 'Messages' && unreadCount > 0 && (
-                  <View style={styles.badge} accessibilityLabel={`${unreadCount} unread messages`}>
+                  <View style={styles.badge}>
                     <Text style={styles.badgeText}>{unreadCount}</Text>
                   </View>
                 )}
               </View>
             );
           },
+          tabBarAccessibilityLabel: unreadCount > 0 && route.name === 'Messages'
+            ? `Messages, ${unreadCount} unread`
+            : route.name,
           tabBarActiveTintColor: Colors.primary,
           tabBarInactiveTintColor: Colors.textMuted,
           tabBarStyle: {

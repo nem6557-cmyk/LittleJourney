@@ -32,6 +32,14 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
       return;
     }
 
+    // Validate date of birth: required, a real date, and not in the future.
+    const dob = newDateOfBirth.trim();
+    const dobDate = new Date(dob);
+    if (!dob || Number.isNaN(dobDate.getTime()) || dobDate > new Date()) {
+      Alert.alert('Invalid Date of Birth', 'Please enter a valid date of birth (YYYY-MM-DD) that is not in the future.');
+      return;
+    }
+
     const daycareId = profile?.daycare_id;
     if (!daycareId) {
       Alert.alert('Error', 'No daycare associated with your account.');
@@ -44,7 +52,7 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
         first_name: newFirstName.trim(),
         last_name: newLastName.trim(),
         daycare_id: daycareId,
-        date_of_birth: newDateOfBirth.trim() || new Date().toISOString().split('T')[0],
+        date_of_birth: dob,
         classroom_id: null,
         avatar_url: null,
         medical_notes: null,

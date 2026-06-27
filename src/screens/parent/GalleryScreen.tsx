@@ -402,7 +402,7 @@ export const GalleryScreen = () => {
         {activeTab === 'milestones' && (
           <>
             <Text style={styles.sectionTitle}>Developmental Progress</Text>
-            <Text style={styles.sectionSubtitle}>Based on CDC/WHO guidelines for {getChildAge(selectedChild.dateOfBirth)}</Text>
+            <Text style={styles.sectionSubtitle}>Common developmental milestones for {getChildAge(selectedChild.dateOfBirth)}</Text>
 
             {milestoneCategories.map((cat) => {
               const catMilestones = milestoneData.filter((m) => m.category === cat);

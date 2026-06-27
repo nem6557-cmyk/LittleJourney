@@ -139,19 +139,25 @@ export const CaregiverDashboard = () => {
     setShowLogModal(true);
   };
 
-  // Upload photos to Supabase Storage, returning public/signed URLs
+  // Upload photos to Supabase Storage, returning public URLs. Failed uploads
+  // are skipped (never persisted as unviewable local file:// URIs). Demo/offline
+  // (no daycare) keeps local URIs since there is no backend to upload to.
   const uploadPhotos = async (uris: string[]): Promise<string[]> => {
     const daycareId = authProfile?.daycare_id;
-    if (!daycareId || isDemoMode) return uris; // In demo mode, keep local URIs
+    if (!daycareId || isDemoMode) return uris; // demo mode: keep local URIs
     const uploaded: string[] = [];
+    let failed = 0;
     for (const uri of uris) {
       try {
         const url = await storageService.uploadTimelinePhoto(daycareId, selectedChild.id, uri);
         uploaded.push(url);
       } catch (err) {
-        console.warn('[CaregiverDashboard] Photo upload failed, using local URI:', err);
-        uploaded.push(uri); // Graceful fallback
+        console.warn('[CaregiverDashboard] Photo upload failed, skipping this photo:', err);
+        failed += 1;
       }
+    }
+    if (failed > 0) {
+      showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
     }
     return uploaded;
   };

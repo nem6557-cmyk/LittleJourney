@@ -471,7 +471,7 @@ export const ProfileScreen = () => {
               Little Journey is a childcare communication app that keeps parents connected with their child's daily experiences. From real-time activity updates and milestone tracking to secure messaging and daily reports — everything you need in one place.
             </Text>
             <Text style={styles.subSectionTitle}>Features</Text>
-            {['Real-time timeline of your child\'s day', 'Secure parent-caregiver messaging', 'AI-generated daily narrative reports', 'Developmental milestone tracking', 'Photo gallery and sharing', 'Calendar and event management', 'Invoice and payment management', 'Incident reporting and attendance tracking', 'PDF report export'].map((feature, i) => (
+            {['Real-time timeline of your child\'s day', 'Secure parent-caregiver messaging', 'Daily narrative summary reports', 'Developmental milestone tracking', 'Photo gallery and sharing', 'Calendar and event management', 'Invoice and payment management', 'Incident reporting and attendance tracking', 'PDF report export'].map((feature, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 6 }}>
                 <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
                 <Text style={{ fontSize: FontSizes.md, color: Colors.textSecondary }}>{feature}</Text>
@@ -977,7 +977,7 @@ export const ProfileScreen = () => {
             </View>
             <View style={styles.badge}>
               <Ionicons name="lock-closed" size={14} color={Colors.primary} />
-              <Text style={styles.badgeText}>End-to-End Encrypted</Text>
+              <Text style={styles.badgeText}>Encrypted & Secure</Text>
             </View>
           </View>
         </TouchableOpacity>

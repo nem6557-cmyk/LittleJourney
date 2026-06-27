@@ -22,7 +22,7 @@ const onboardingSlides = [
   { emoji: '🦋', title: 'Welcome to Little Journey', subtitle: 'A living journal of your child\'s day', color: '#667eea' },
   { emoji: '📸', title: 'Real-Time Updates', subtitle: 'Photos, meals, naps, and milestones — as they happen', color: '#f093fb' },
   { emoji: '💬', title: 'Stay Connected', subtitle: 'Secure messaging with your child\'s caregivers', color: '#4facfe' },
-  { emoji: '📊', title: 'Daily Reports', subtitle: 'AI-generated narratives of your child\'s wonderful day', color: '#fa709a' },
+  { emoji: '📊', title: 'Daily Reports', subtitle: 'Beautiful daily summaries of your child\'s wonderful day', color: '#fa709a' },
 ];
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onNavigateToSignUp, onNavigateToForgotPassword }) => {
@@ -176,7 +176,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onNavigate
               </View>
               <View style={styles.footerBadge}>
                 <Ionicons name="lock-closed" size={14} color={Colors.primary} />
-                <Text style={styles.footerBadgeText}>End-to-End Encrypted</Text>
+                <Text style={styles.footerBadgeText}>Encrypted & Secure</Text>
               </View>
             </View>
             <Text style={styles.footerVersion}>Little Journey v1.0.0</Text>

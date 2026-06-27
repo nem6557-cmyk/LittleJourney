@@ -121,22 +121,27 @@ export const TimelineScreen = () => {
   }, [timelineEntries, selectedChild]);
 
   /**
-   * Upload photo URIs to Supabase Storage (or fall back to local URIs).
+   * Upload photo URIs to Supabase Storage. Returns the public URLs that
+   * uploaded successfully plus a count of failures. A local file:// URI that
+   * failed to upload is NEVER returned — it would be unviewable for anyone
+   * else and would persist a broken reference. Demo/offline (no daycare) keeps
+   * local URIs since there is no backend to upload to.
    */
-  const uploadPhotos = async (uris: string[]): Promise<string[]> => {
+  const uploadPhotos = async (uris: string[]): Promise<{ urls: string[]; failed: number }> => {
     const daycareId = authProfile?.daycare_id;
-    if (!daycareId) return uris; // No daycare → use local URIs
+    if (!daycareId) return { urls: uris, failed: 0 }; // demo/offline: local URIs only
     const uploaded: string[] = [];
+    let failed = 0;
     for (const uri of uris) {
       try {
         const url = await storageService.uploadTimelinePhoto(daycareId, selectedChild.id, uri);
         uploaded.push(url);
       } catch (err) {
-        console.warn('[Timeline] Photo upload failed, using local URI:', err);
-        uploaded.push(uri); // Graceful fallback
+        console.warn('[Timeline] Photo upload failed, skipping this photo:', err);
+        failed += 1;
       }
     }
-    return uploaded;
+    return { urls: uploaded, failed };
   };
 
   const handleAddPhoto = () => {
@@ -157,7 +162,14 @@ export const TimelineScreen = () => {
             setIsUploading(true);
             try {
               const localUris = result.assets.map((a) => a.uri);
-              const photoUrls = await uploadPhotos(localUris);
+              const { urls: photoUrls, failed } = await uploadPhotos(localUris);
+              if (photoUrls.length === 0) {
+                showAlert('Upload Failed', 'The photo could not be uploaded. Please check your connection and try again.');
+                return;
+              }
+              if (failed > 0) {
+                showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
+              }
               addTimelineEntry({
                 childId: selectedChild.id,
                 type: 'photo',
@@ -188,7 +200,14 @@ export const TimelineScreen = () => {
             setIsUploading(true);
             try {
               const localUris = result.assets.map((a) => a.uri);
-              const photoUrls = await uploadPhotos(localUris);
+              const { urls: photoUrls, failed } = await uploadPhotos(localUris);
+              if (photoUrls.length === 0) {
+                showAlert('Upload Failed', 'The photos could not be uploaded. Please check your connection and try again.');
+                return;
+              }
+              if (failed > 0) {
+                showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
+              }
               addTimelineEntry({
                 childId: selectedChild.id,
                 type: 'photo',
