@@ -114,6 +114,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     [
+      'expo-media-library',
+      {
+        photosPermission: 'LittleJourney needs photo library access to save your child\'s photos.',
+        savePhotosPermission: 'LittleJourney needs permission to save photos to your library.',
+        isAccessMediaLocationEnabled: true,
+      },
+    ],
+    [
+      'expo-local-authentication',
+      {
+        faceIDPermission: 'LittleJourney uses Face ID to secure access to your account.',
+      },
+    ],
+    [
       '@stripe/stripe-react-native',
       {
         merchantIdentifier: 'merchant.com.littlejourney.app',

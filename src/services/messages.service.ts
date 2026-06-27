@@ -83,6 +83,23 @@ export const messagesService = {
     });
   },
 
+  editMessage: async (messageId: string, text: string) => {
+    const { error } = await supabase
+      .from('messages')
+      .update({ text, edited_at: new Date().toISOString() } as Record<string, unknown>)
+      .eq('id', messageId);
+    if (error) throw error;
+  },
+
+  // Soft delete: set deleted_at; the UI renders a tombstone.
+  deleteMessage: async (messageId: string) => {
+    const { error } = await supabase
+      .from('messages')
+      .update({ deleted_at: new Date().toISOString() } as Record<string, unknown>)
+      .eq('id', messageId);
+    if (error) throw error;
+  },
+
   markRead: async (conversationId: string, userId: string) => {
     return withRetry(async () => {
       const { error } = await supabase

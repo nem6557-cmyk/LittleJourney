@@ -396,13 +396,17 @@ export interface Database {
           text: string;
           attachments: string[];
           is_urgent: boolean;
+          edited_at: string | null;
+          deleted_at: string | null;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['messages']['Row'], 'id' | 'created_at' | 'attachments' | 'is_urgent'> & {
+        Insert: Omit<Database['public']['Tables']['messages']['Row'], 'id' | 'created_at' | 'attachments' | 'is_urgent' | 'edited_at' | 'deleted_at'> & {
           id?: string;
           created_at?: string;
           attachments?: string[];
           is_urgent?: boolean;
+          edited_at?: string | null;
+          deleted_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
         Relationships: [

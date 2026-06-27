@@ -59,6 +59,8 @@ interface AppContextType {
   unreadCount: number;
   createConversation: (participantIds: string[], title?: string) => Promise<{ conversationId: string | null; error: string | null }>;
   listContacts: () => Promise<{ id: string; name: string; role: string }[]>;
+  editMessage: (messageId: string, text: string) => void;
+  deleteMessage: (messageId: string) => void;
 
   // Child management
   addChild: (data: { firstName: string; lastName: string; dateOfBirth: string }) => Promise<{ error: string | null }>;
@@ -337,11 +339,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 senderId: m.sender_id,
                 senderName: senderProfile ? `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() : 'Unknown',
                 senderRole: (senderProfile?.role || 'parent') as UserRole,
-                text: m.text,
+                text: m.deleted_at ? '' : m.text,
                 timestamp: m.created_at,
                 read: false,
                 isUrgent: m.is_urgent,
                 attachments: m.attachments || [],
+                edited: !!m.edited_at,
+                deleted: !!m.deleted_at,
               };
             });
             setMessages(mappedMessages);
@@ -1189,6 +1193,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [auth.profile]);
 
+  // ── Edit / delete a message (sender only; delete is a soft-delete) ──
+  const editMessage = useCallback((messageId: string, text: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, text, edited: true } : m)));
+    if (auth.profile) {
+      messagesService.editMessage(messageId, text).catch((err) =>
+        console.warn('[AppContext] Failed to edit message:', err)
+      );
+    }
+  }, [auth.profile]);
+
+  const deleteMessage = useCallback((messageId: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: true, text: '' } : m)));
+    if (auth.profile) {
+      messagesService.deleteMessage(messageId).catch((err) =>
+        console.warn('[AppContext] Failed to delete message:', err)
+      );
+    }
+  }, [auth.profile]);
+
   // ── Child management (admin) ──
   const addChild = useCallback(
     async (data: { firstName: string; lastName: string; dateOfBirth: string }): Promise<{ error: string | null }> => {
@@ -1632,7 +1655,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteTimelineEntry, updateTimelineEntry,
       messages, conversations, activeConversationId, setActiveConversation,
       sendMessage, markMessagesRead, unreadCount,
-      createConversation, listContacts,
+      createConversation, listContacts, editMessage, deleteMessage,
       addChild, updateChildInfo, removeChild,
       preferences, updatePreferences,
       todayStats, isCheckedIn, toggleCheckIn,
@@ -1654,7 +1677,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteTimelineEntry, updateTimelineEntry,
       messages, conversations, activeConversationId, setActiveConversation,
       sendMessage, markMessagesRead, unreadCount,
-      createConversation, listContacts,
+      createConversation, listContacts, editMessage, deleteMessage,
       addChild, updateChildInfo, removeChild,
       preferences, updatePreferences,
       todayStats, isCheckedIn, toggleCheckIn,
