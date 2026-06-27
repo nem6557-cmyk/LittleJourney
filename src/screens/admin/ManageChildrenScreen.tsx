@@ -13,7 +13,7 @@ import { EmptyState } from '../../components/EmptyState';
 type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void };
 
 export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigation }) => {
-  const { children, selectedChild, selectChild, refreshData } = useApp();
+  const { children, selectedChild, selectChild, refreshData, updateChildInfo, removeChild } = useApp();
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -21,6 +21,87 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
   const [newLastName, setNewLastName] = useState('');
   const [newDateOfBirth, setNewDateOfBirth] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+
+  // Edit modal state
+  const [editChildId, setEditChildId] = useState<string | null>(null);
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editDateOfBirth, setEditDateOfBirth] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const openEditModal = (child: typeof children[number]) => {
+    setEditChildId(child.id);
+    setEditFirstName(child.firstName);
+    setEditLastName(child.lastName);
+    setEditDateOfBirth(child.dateOfBirth || '');
+  };
+
+  const closeEditModal = () => {
+    setEditChildId(null);
+    setEditFirstName('');
+    setEditLastName('');
+    setEditDateOfBirth('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editChildId) return;
+    if (!editFirstName.trim() || !editLastName.trim()) {
+      Alert.alert('Required', 'First and last name are required.');
+      return;
+    }
+
+    // Validate date of birth: required, a real date, and not in the future.
+    const dob = editDateOfBirth.trim();
+    const dobDate = new Date(dob);
+    if (!dob || Number.isNaN(dobDate.getTime()) || dobDate > new Date()) {
+      Alert.alert('Invalid Date of Birth', 'Please enter a valid date of birth (YYYY-MM-DD) that is not in the future.');
+      return;
+    }
+
+    setIsSaving(true);
+    const { error } = await updateChildInfo(editChildId, {
+      firstName: editFirstName.trim(),
+      lastName: editLastName.trim(),
+      dateOfBirth: dob,
+    });
+    setIsSaving(false);
+
+    if (error) {
+      Alert.alert('Error', error);
+      return;
+    }
+    Alert.alert('Success', `${editFirstName.trim()} ${editLastName.trim()} has been updated.`);
+    closeEditModal();
+  };
+
+  const handleDelete = () => {
+    if (!editChildId) return;
+    const name = `${editFirstName.trim() || 'this child'} ${editLastName.trim()}`.trim();
+    Alert.alert(
+      'Unenroll Child',
+      `Are you sure you want to remove ${name}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unenroll',
+          style: 'destructive',
+          onPress: async () => {
+            if (!editChildId) return;
+            setIsDeleting(true);
+            const { error } = await removeChild(editChildId);
+            setIsDeleting(false);
+            if (error) {
+              Alert.alert('Error', error);
+              return;
+            }
+            Alert.alert('Removed', `${name} has been unenrolled.`);
+            closeEditModal();
+          },
+        },
+      ]
+    );
+  };
 
   const filtered = children.filter((c) =>
     `${c.firstName} ${c.lastName}`.toLowerCase().includes(search.toLowerCase())
@@ -117,7 +198,11 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
           />
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={[styles.childCard, Shadows.small]} onPress={() => selectChild(item.id)}>
+          <TouchableOpacity
+            style={[styles.childCard, Shadows.small]}
+            onPress={() => { selectChild(item.id); openEditModal(item); }}
+            onLongPress={() => openEditModal(item)}
+          >
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{item.firstName.charAt(0)}</Text>
             </View>
@@ -127,7 +212,7 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
                 {item.classroom || 'Unassigned'} {item.allergies.length > 0 ? `• ${item.allergies.length} allergies` : ''}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+            <Ionicons name="create-outline" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
         )}
       />
@@ -181,6 +266,66 @@ export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigat
           </View>
         </View>
       </Modal>
+
+      {/* Edit Child Modal */}
+      <Modal visible={editChildId !== null} animationType="slide" transparent onRequestClose={closeEditModal}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, Shadows.large]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Child</Text>
+              <TouchableOpacity onPress={closeEditModal}>
+                <Ionicons name="close" size={24} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.fieldLabel}>First Name</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editFirstName}
+              onChangeText={setEditFirstName}
+              placeholder="First name"
+              placeholderTextColor={Colors.textMuted}
+            />
+            <Text style={styles.fieldLabel}>Last Name</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editLastName}
+              onChangeText={setEditLastName}
+              placeholder="Last name"
+              placeholderTextColor={Colors.textMuted}
+            />
+            <Text style={styles.fieldLabel}>Date of Birth</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editDateOfBirth}
+              onChangeText={setEditDateOfBirth}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={Colors.textMuted}
+            />
+            <TouchableOpacity style={styles.submitBtn} onPress={handleSaveEdit} disabled={isSaving || isDeleting}>
+              <LinearGradient colors={['#6C63FF', '#3F3D9E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.submitGradient}>
+                {isSaving ? (
+                  <ActivityIndicator color={Colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="save" size={20} color={Colors.white} />
+                    <Text style={styles.submitText}>Save Changes</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={isSaving || isDeleting}>
+              {isDeleting ? (
+                <ActivityIndicator color={Colors.danger} />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={20} color={Colors.danger} />
+                  <Text style={styles.deleteText}>Unenroll Child</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -212,4 +357,6 @@ const styles = StyleSheet.create({
   submitBtn: { marginTop: Spacing.xl, borderRadius: BorderRadius.lg, overflow: 'hidden' },
   submitGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, gap: Spacing.sm },
   submitText: { fontSize: FontSizes.lg, color: Colors.white, fontWeight: '700' },
+  deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: Spacing.md, paddingVertical: Spacing.md, gap: Spacing.sm },
+  deleteText: { fontSize: FontSizes.md, color: Colors.danger, fontWeight: '700' },
 });

@@ -20,6 +20,7 @@ export const MessagesScreen = () => {
     currentRole, currentUser, messages, conversations, sendMessage,
     markMessagesRead, activeConversationId, setActiveConversation,
     selectedChild, showAlert, isLoading,
+    createConversation, listContacts,
   } = useApp();
   const { profile: authProfile } = useAuth();
   const [inputText, setInputText] = useState('');
@@ -28,6 +29,58 @@ export const MessagesScreen = () => {
   const [localSearch, setLocalSearch] = useState('');
   const [messageFilter, setMessageFilter] = useState<'all' | 'unread' | 'urgent'>('all');
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // ── Compose (new message) flow ──
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [contacts, setContacts] = useState<{ id: string; name: string; role: string }[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
+  const [isCreatingConversation, setIsCreatingConversation] = useState(false);
+
+  const openCompose = async () => {
+    setSelectedRecipients([]);
+    setComposeOpen(true);
+    setContactsLoading(true);
+    try {
+      const list = await listContacts();
+      setContacts(list);
+    } catch {
+      setContacts([]);
+    } finally {
+      setContactsLoading(false);
+    }
+  };
+
+  const closeCompose = () => {
+    if (isCreatingConversation) return;
+    setComposeOpen(false);
+    setSelectedRecipients([]);
+  };
+
+  const toggleRecipient = (id: string) => {
+    setSelectedRecipients((prev) =>
+      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
+    );
+  };
+
+  const handleCreateConversation = async () => {
+    if (selectedRecipients.length === 0 || isCreatingConversation) return;
+    setIsCreatingConversation(true);
+    try {
+      const { error } = await createConversation(selectedRecipients);
+      if (error) {
+        showAlert('Could Not Start Conversation', error);
+        return;
+      }
+      // Success: the new conversation becomes active and the list refreshes.
+      setComposeOpen(false);
+      setSelectedRecipients([]);
+    } catch {
+      showAlert('Could Not Start Conversation', 'Something went wrong. Please try again.');
+    } finally {
+      setIsCreatingConversation(false);
+    }
+  };
 
   // Track screen view on mount (#34)
   useEffect(() => {
@@ -138,6 +191,95 @@ export const MessagesScreen = () => {
     );
   }
 
+  // ── Compose (new message) modal — shared by FAB and empty-state CTA ──
+  const renderComposeModal = () => (
+    <Modal
+      visible={composeOpen}
+      animationType="slide"
+      transparent
+      onRequestClose={closeCompose}
+    >
+      <View style={styles.composeOverlay}>
+        <View style={styles.composeSheet}>
+          <View style={styles.composeHeader}>
+            <Text style={styles.composeTitle}>New Message</Text>
+            <TouchableOpacity
+              onPress={closeCompose}
+              accessibilityLabel="Close"
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.composeSubtitle}>Select one or more recipients</Text>
+
+          {contactsLoading ? (
+            <View style={styles.composeEmpty}>
+              <Text style={styles.composeEmptyText}>Loading contacts…</Text>
+            </View>
+          ) : contacts.length === 0 ? (
+            <View style={styles.composeEmpty}>
+              <Ionicons name="people-outline" size={40} color={Colors.textMuted} />
+              <Text style={styles.composeEmptyText}>No contacts available</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={contacts}
+              keyExtractor={(item) => item.id}
+              style={styles.composeList}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const selected = selectedRecipients.includes(item.id);
+                return (
+                  <TouchableOpacity
+                    style={[styles.contactRow, selected && styles.contactRowSelected]}
+                    onPress={() => toggleRecipient(item.id)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                  >
+                    <View style={styles.contactAvatar}>
+                      <Text style={styles.contactAvatarText}>
+                        {item.name.replace(/^(Ms\.|Mr\.|Mrs\.|Dr\.)\s*/, '').charAt(0) || '?'}
+                      </Text>
+                    </View>
+                    <View style={styles.contactInfo}>
+                      <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
+                      <Text style={styles.contactRole}>{item.role}</Text>
+                    </View>
+                    <Ionicons
+                      name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={24}
+                      color={selected ? Colors.primary : Colors.borderLight}
+                    />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.composeConfirm,
+              (selectedRecipients.length === 0 || isCreatingConversation) && styles.composeConfirmDisabled,
+            ]}
+            onPress={handleCreateConversation}
+            disabled={selectedRecipients.length === 0 || isCreatingConversation}
+            accessibilityRole="button"
+          >
+            <Text style={styles.composeConfirmText}>
+              {isCreatingConversation
+                ? 'Starting…'
+                : selectedRecipients.length > 0
+                  ? `Start Conversation (${selectedRecipients.length})`
+                  : 'Start Conversation'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // ── Conversation List View ──
   if (!activeConversationId) {
     return (
@@ -208,6 +350,15 @@ export const MessagesScreen = () => {
             <View style={styles.emptyState}>
               <Ionicons name="chatbubbles-outline" size={48} color={Colors.textMuted} />
               <Text style={styles.emptyTitle}>No conversations found</Text>
+              <TouchableOpacity
+                style={styles.emptyCta}
+                onPress={openCompose}
+                accessibilityLabel="Start a new message"
+                accessibilityRole="button"
+              >
+                <Ionicons name="create-outline" size={18} color={Colors.white} />
+                <Text style={styles.emptyCtaText}>New Message</Text>
+              </TouchableOpacity>
             </View>
           }
           ListFooterComponent={<View style={{ height: 100 }} />}
@@ -254,6 +405,18 @@ export const MessagesScreen = () => {
             );
           }}
         />
+
+        {/* Compose FAB */}
+        <TouchableOpacity
+          style={[styles.composeFab, Shadows.medium]}
+          onPress={openCompose}
+          accessibilityLabel="New message"
+          accessibilityRole="button"
+        >
+          <Ionicons name="create" size={24} color={Colors.white} />
+        </TouchableOpacity>
+
+        {renderComposeModal()}
       </View>
     );
   }
@@ -498,6 +661,29 @@ const styles = StyleSheet.create({
   unreadText: { fontSize: 10, color: Colors.white, fontWeight: '700' },
   emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl },
   emptyTitle: { fontSize: FontSizes.md, color: Colors.textMuted, marginTop: Spacing.md },
+  emptyCta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, backgroundColor: Colors.primary, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: BorderRadius.round, marginTop: Spacing.lg },
+  emptyCtaText: { fontSize: FontSizes.md, color: Colors.white, fontWeight: '700' },
+
+  // Compose FAB + modal
+  composeFab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
+  composeOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  composeSheet: { backgroundColor: Colors.background, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.xl, maxHeight: '80%' },
+  composeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  composeTitle: { fontSize: FontSizes.xl, fontWeight: '800', color: Colors.textPrimary },
+  composeSubtitle: { fontSize: FontSizes.sm, color: Colors.textMuted, marginTop: Spacing.xs, marginBottom: Spacing.md },
+  composeList: { flexGrow: 0 },
+  composeEmpty: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.sm },
+  composeEmptyText: { fontSize: FontSizes.md, color: Colors.textMuted },
+  contactRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, marginBottom: Spacing.sm, gap: Spacing.md, borderWidth: 1, borderColor: 'transparent' },
+  contactRowSelected: { borderColor: Colors.primary },
+  contactAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
+  contactAvatarText: { fontSize: FontSizes.md, color: Colors.white, fontWeight: '700' },
+  contactInfo: { flex: 1 },
+  contactName: { fontSize: FontSizes.md, fontWeight: '600', color: Colors.textPrimary },
+  contactRole: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1, textTransform: 'capitalize' },
+  composeConfirm: { backgroundColor: Colors.primary, borderRadius: BorderRadius.round, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.md },
+  composeConfirmDisabled: { backgroundColor: Colors.borderLight },
+  composeConfirmText: { fontSize: FontSizes.md, color: Colors.white, fontWeight: '700' },
 
   // Chat header
   chatHeader: { paddingTop: 60, paddingBottom: Spacing.md, paddingHorizontal: Spacing.lg, flexDirection: 'row', alignItems: 'center' },

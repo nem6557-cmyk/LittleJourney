@@ -36,7 +36,7 @@ interface MenuSection {
 }
 
 export const ProfileScreen = () => {
-  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents } = useApp();
+  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents, preferences, updatePreferences } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const auth = useAuth();
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
@@ -99,6 +99,35 @@ export const ProfileScreen = () => {
       }
     })();
   }, []);
+
+  // Seed notification & privacy toggles from the server-backed preferences object
+  // (profiles.preferences) once it loads. AppContext is the source of truth; the
+  // AsyncStorage load above remains as an offline cache. Server values win when present.
+  const prefsSeeded = React.useRef(false);
+  useEffect(() => {
+    if (prefsSeeded.current) return;
+    if (!preferences || Object.keys(preferences).length === 0) return;
+    prefsSeeded.current = true;
+    if (typeof preferences.smartNotifs === 'boolean') setSmartNotifs(preferences.smartNotifs);
+    if (typeof preferences.mealNotifs === 'boolean') setMealNotifs(preferences.mealNotifs);
+    if (typeof preferences.napNotifs === 'boolean') setNapNotifs(preferences.napNotifs);
+    if (typeof preferences.photoNotifs === 'boolean') setPhotoNotifs(preferences.photoNotifs);
+    if (typeof preferences.milestoneNotifs === 'boolean') setMilestoneNotifs(preferences.milestoneNotifs);
+    if (typeof preferences.photoSharing === 'boolean') setPhotoSharing(preferences.photoSharing);
+    if (typeof preferences.classPhotos === 'boolean') setClassPhotos(preferences.classPhotos);
+    if (typeof preferences.analyticsSharing === 'boolean') setAnalyticsSharing(preferences.analyticsSharing);
+  }, [preferences]);
+
+  // Toggle a notification/privacy preference: update local state, persist to
+  // AppContext (profiles.preferences), and let the existing AsyncStorage effect
+  // cache it offline.
+  const togglePref = useCallback(
+    (key: string, value: boolean, setter: (v: boolean) => void) => {
+      setter(value);
+      updatePreferences({ [key]: value });
+    },
+    [updatePreferences]
+  );
 
   // Save preferences to AsyncStorage whenever they change
   const savePreferences = useCallback(async () => {
@@ -488,11 +517,11 @@ export const ProfileScreen = () => {
           <View>
             <Text style={styles.subTitle}>Notification Preferences</Text>
             {[
-              { label: 'Smart Notifications', desc: 'Only get notified for important updates', value: smartNotifs, onToggle: setSmartNotifs },
-              { label: 'Meal Updates', desc: 'Get notified when meals are logged', value: mealNotifs, onToggle: setMealNotifs },
-              { label: 'Nap Updates', desc: 'Get notified for nap start/end', value: napNotifs, onToggle: setNapNotifs },
-              { label: 'Photo Alerts', desc: 'New photos shared by caregiver', value: photoNotifs, onToggle: setPhotoNotifs },
-              { label: 'Milestone Alerts', desc: 'New developmental milestones', value: milestoneNotifs, onToggle: setMilestoneNotifs },
+              { label: 'Smart Notifications', desc: 'Only get notified for important updates', value: smartNotifs, onToggle: (v: boolean) => togglePref('smartNotifs', v, setSmartNotifs) },
+              { label: 'Meal Updates', desc: 'Get notified when meals are logged', value: mealNotifs, onToggle: (v: boolean) => togglePref('mealNotifs', v, setMealNotifs) },
+              { label: 'Nap Updates', desc: 'Get notified for nap start/end', value: napNotifs, onToggle: (v: boolean) => togglePref('napNotifs', v, setNapNotifs) },
+              { label: 'Photo Alerts', desc: 'New photos shared by caregiver', value: photoNotifs, onToggle: (v: boolean) => togglePref('photoNotifs', v, setPhotoNotifs) },
+              { label: 'Milestone Alerts', desc: 'New developmental milestones', value: milestoneNotifs, onToggle: (v: boolean) => togglePref('milestoneNotifs', v, setMilestoneNotifs) },
               { label: 'Emergency Alerts', desc: 'Cannot be disabled', value: true, onToggle: () => {} },
             ].map((pref, i) => (
               <View key={i} style={styles.prefRow}>
@@ -514,9 +543,9 @@ export const ProfileScreen = () => {
             <Text style={styles.subTitle}>Privacy Settings</Text>
             <Text style={styles.subDesc}>Control how your data is shared</Text>
             {[
-              { label: 'Photo Sharing', desc: 'Allow caregivers to share photos of your child', value: photoSharing, onToggle: setPhotoSharing },
-              { label: 'Class Photos', desc: 'Include your child in class group photos', value: classPhotos, onToggle: setClassPhotos },
-              { label: 'Analytics', desc: 'Share anonymized usage data to improve the app', value: analyticsSharing, onToggle: setAnalyticsSharing },
+              { label: 'Photo Sharing', desc: 'Allow caregivers to share photos of your child', value: photoSharing, onToggle: (v: boolean) => togglePref('photoSharing', v, setPhotoSharing) },
+              { label: 'Class Photos', desc: 'Include your child in class group photos', value: classPhotos, onToggle: (v: boolean) => togglePref('classPhotos', v, setClassPhotos) },
+              { label: 'Analytics', desc: 'Share anonymized usage data to improve the app', value: analyticsSharing, onToggle: (v: boolean) => togglePref('analyticsSharing', v, setAnalyticsSharing) },
             ].map((pref, i) => (
               <View key={i} style={styles.prefRow}>
                 <View style={styles.prefInfo}><Text style={styles.prefLabel}>{pref.label}</Text><Text style={styles.prefDesc}>{pref.desc}</Text></View>

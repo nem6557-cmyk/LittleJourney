@@ -1036,37 +1036,44 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
     setNotifications((prev) => [newNotif, ...prev]);
 
-    // Persist and dispatch push notification
-    if (auth.profile?.daycare_id && notif.childId) {
-      // Find parents of this child to notify them
+    // Persist and dispatch. With a childId we notify that child's parents; with
+    // no childId (e.g. an emergency alert) we fan out to the whole daycare.
+    if (auth.profile?.daycare_id) {
       (async () => {
         try {
-          const { data: parents } = await supabase
-            .from('parent_children')
-            .select('parent_id')
-            .eq('child_id', notif.childId!);
+          let recipientIds: string[];
+          if (notif.childId) {
+            const { data: parents } = await supabase
+              .from('parent_children')
+              .select('parent_id')
+              .eq('child_id', notif.childId);
+            recipientIds = (parents || []).map((p) => p.parent_id);
+          } else {
+            // Daycare-wide fan-out (e.g. emergency alert / announcement).
+            const { data: members } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('daycare_id', auth.profile!.daycare_id!);
+            recipientIds = (members || []).map((m) => m.id);
+          }
 
-          for (const p of (parents || [])) {
-            if (p.parent_id !== auth.profile?.id) {
-              // Insert notification record
-              await supabase.from('notifications').insert({
-                user_id: p.parent_id,
-                daycare_id: auth.profile!.daycare_id!,
-                type: notif.type as any,
-                title: notif.title,
-                body: notif.body,
-                data: { childId: notif.childId },
-              } as any);
-
-              // Dispatch push
-              dispatchPushNotification({
-                user_id: p.parent_id,
-                title: notif.title,
-                body: notif.body,
-                type: notif.type,
-                data: { childId: notif.childId },
-              });
-            }
+          for (const recipientId of recipientIds) {
+            if (recipientId === auth.profile?.id) continue; // don't notify the sender
+            await supabase.from('notifications').insert({
+              user_id: recipientId,
+              daycare_id: auth.profile!.daycare_id!,
+              type: notif.type as any,
+              title: notif.title,
+              body: notif.body,
+              data: notif.childId ? { childId: notif.childId } : {},
+            } as any);
+            dispatchPushNotification({
+              user_id: recipientId,
+              title: notif.title,
+              body: notif.body,
+              type: notif.type,
+              data: notif.childId ? { childId: notif.childId } : {},
+            });
           }
         } catch (err) {
           console.warn('[AppContext] Failed to dispatch notification:', err);
@@ -1353,22 +1360,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         details: { severity: incident.severity, location: incident.location, actionTaken: incident.actionTaken },
         isUrgent: incident.severity !== 'minor',
       });
-      // Add notification
-      setNotifications((prev) => [
-        {
-          id: `n${Date.now()}`,
-          type: 'incident',
-          title: `Incident Report — ${incident.childName}`,
-          body: `${incident.type.replace('_', ' ')} (${incident.severity}) at ${incident.location}`,
-          timestamp: new Date().toISOString(),
-          read: false,
-          childId: incident.childId,
-          icon: '🚨',
-        },
-        ...prev,
-      ]);
 
-      // Persist incident to Supabase
+      // Notify the child's parents (addNotification fans out to parents + push
+      // when childId is set), so "the parent will be notified" is actually true.
+      addNotification({
+        type: 'incident',
+        title: `Incident Report — ${incident.childName}`,
+        body: `${incident.type.replace('_', ' ')} (${incident.severity})${incident.location ? ` at ${incident.location}` : ''}`,
+        read: false,
+        childId: incident.childId,
+        icon: '🚨',
+      });
+
+      // Persist incident to Supabase with witness + parent-notified timestamp.
       if (auth.profile && auth.profile.daycare_id) {
         incidentsService.createIncident({
           child_id: incident.childId,
@@ -1379,12 +1383,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           description: incident.description,
           location: incident.location || null,
           action_taken: incident.actionTaken || 'See description',
-          parent_notified_at: null,
-          witness_name: null,
+          parent_notified_at: incident.parentNotified ? new Date().toISOString() : null,
+          witness_name: incident.witnessName || null,
         }).catch((err) => console.warn('[AppContext] Failed to persist incident:', err));
       }
     },
-    [currentUser, addTimelineEntry, auth.profile]
+    [currentUser, addTimelineEntry, addNotification, auth.profile]
   );
 
   // ── Attendance ──
