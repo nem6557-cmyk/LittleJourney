@@ -64,3 +64,10 @@ nul
 # Playwright MCP scratch (screenshots, snapshots, console logs)
 .playwright-mcp/
 *.playwright-mcp.png
+
+# Local secrets for test seeding (NEVER commit)
+.secrets.local
+
+# Local-only test/seed scripts and live-walkthrough screenshots (never commit)
+_*.local.mjs
+live-*.png
