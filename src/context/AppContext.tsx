@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { timelineService } from '../services/timeline.service';
 import { messagesService } from '../services/messages.service';
+import { childrenService } from '../services/children.service';
 import { incidentsService } from '../services/incidents.service';
 import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
@@ -56,6 +57,17 @@ interface AppContextType {
   sendMessage: (text: string, isUrgent?: boolean, conversationId?: string) => void;
   markMessagesRead: (conversationId?: string) => void;
   unreadCount: number;
+  createConversation: (participantIds: string[], title?: string) => Promise<{ conversationId: string | null; error: string | null }>;
+  listContacts: () => Promise<{ id: string; name: string; role: string }[]>;
+
+  // Child management
+  addChild: (data: { firstName: string; lastName: string; dateOfBirth: string }) => Promise<{ error: string | null }>;
+  updateChildInfo: (childId: string, updates: Partial<Child>) => Promise<{ error: string | null }>;
+  removeChild: (childId: string) => Promise<{ error: string | null }>;
+
+  // Preferences
+  preferences: Record<string, unknown>;
+  updatePreferences: (updates: Record<string, unknown>) => Promise<void>;
 
   // Stats
   todayStats: {
@@ -1136,6 +1148,121 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setActiveConversationId(id);
   }, []);
 
+  // ── Create a new conversation (atomic RPC) and make it active ──
+  const createConversation = useCallback(
+    async (participantIds: string[], title?: string): Promise<{ conversationId: string | null; error: string | null }> => {
+      if (!auth.profile) return { conversationId: null, error: 'Not signed in' };
+      try {
+        const type = participantIds.length > 1 ? 'group' : 'direct';
+        const convId = await messagesService.createConversationRpc(participantIds, type, title ?? null);
+        setActiveConversationId(convId);
+        setRefreshCounter((c) => c + 1); // pull in the new conversation
+        return { conversationId: convId, error: null };
+      } catch (err) {
+        console.warn('[AppContext] createConversation failed:', err);
+        return { conversationId: null, error: 'Could not start the conversation.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  // ── List same-daycare contacts (for the compose recipient picker) ──
+  const listContacts = useCallback(async (): Promise<{ id: string; name: string; role: string }[]> => {
+    if (!auth.profile?.daycare_id) return [];
+    try {
+      const rows = await messagesService.listDaycareContacts(auth.profile.daycare_id, auth.profile.id);
+      return rows.map((r) => ({
+        id: r.id,
+        name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Unknown',
+        role: r.role,
+      }));
+    } catch (err) {
+      console.warn('[AppContext] listContacts failed:', err);
+      return [];
+    }
+  }, [auth.profile]);
+
+  // ── Child management (admin) ──
+  const addChild = useCallback(
+    async (data: { firstName: string; lastName: string; dateOfBirth: string }): Promise<{ error: string | null }> => {
+      if (!auth.profile?.daycare_id) return { error: 'No daycare associated with your account.' };
+      try {
+        await childrenService.createChild({
+          first_name: data.firstName,
+          last_name: data.lastName,
+          daycare_id: auth.profile.daycare_id,
+          date_of_birth: data.dateOfBirth,
+          classroom_id: null,
+          avatar_url: null,
+          medical_notes: null,
+        });
+        setRefreshCounter((c) => c + 1);
+        return { error: null };
+      } catch (err) {
+        console.warn('[AppContext] addChild failed:', err);
+        return { error: (err as Error).message || 'Failed to add child.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  const updateChildInfo = useCallback(
+    async (childId: string, updates: Partial<Child>): Promise<{ error: string | null }> => {
+      if (!auth.profile) return { error: 'Not signed in' };
+      try {
+        const dbUpdates: Record<string, unknown> = {};
+        if (updates.firstName !== undefined) dbUpdates.first_name = updates.firstName;
+        if (updates.lastName !== undefined) dbUpdates.last_name = updates.lastName;
+        if (updates.dateOfBirth !== undefined) dbUpdates.date_of_birth = updates.dateOfBirth;
+        if (updates.allergies !== undefined) dbUpdates.allergies = updates.allergies;
+        await childrenService.updateChild(childId, dbUpdates as any);
+        setRefreshCounter((c) => c + 1);
+        return { error: null };
+      } catch (err) {
+        console.warn('[AppContext] updateChildInfo failed:', err);
+        return { error: (err as Error).message || 'Failed to update child.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  const removeChild = useCallback(
+    async (childId: string): Promise<{ error: string | null }> => {
+      if (!auth.profile) return { error: 'Not signed in' };
+      try {
+        await childrenService.deleteChild(childId);
+        setRefreshCounter((c) => c + 1);
+        return { error: null };
+      } catch (err) {
+        console.warn('[AppContext] removeChild failed:', err);
+        return { error: (err as Error).message || 'Failed to remove child.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  // ── User preferences (persisted to profiles.preferences) ──
+  const [preferences, setPreferences] = useState<Record<string, unknown>>({});
+  useEffect(() => {
+    const prefs = (auth.profile as { preferences?: Record<string, unknown> } | null)?.preferences;
+    if (prefs && typeof prefs === 'object') setPreferences(prefs);
+  }, [auth.profile]);
+
+  const updatePreferences = useCallback(
+    async (updates: Record<string, unknown>): Promise<void> => {
+      setPreferences((prev) => ({ ...prev, ...updates }));
+      if (auth.profile && !auth.isDemoMode) {
+        try {
+          const merged = { ...preferences, ...updates };
+          await supabase.from('profiles').update({ preferences: merged }).eq('id', auth.profile.id);
+        } catch (err) {
+          console.warn('[AppContext] updatePreferences failed:', err);
+        }
+      }
+    },
+    [auth.profile, auth.isDemoMode, preferences]
+  );
+
   // ── Check-in/out ──
   const toggleCheckIn = useCallback(() => {
     const action = isCheckedIn ? 'checkout' : 'checkin';
@@ -1501,6 +1628,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteTimelineEntry, updateTimelineEntry,
       messages, conversations, activeConversationId, setActiveConversation,
       sendMessage, markMessagesRead, unreadCount,
+      createConversation, listContacts,
+      addChild, updateChildInfo, removeChild,
+      preferences, updatePreferences,
       todayStats, isCheckedIn, toggleCheckIn,
       notifications, unreadNotificationCount, markNotificationRead, markAllNotificationsRead, addNotification,
       incidents, addIncident,
@@ -1520,6 +1650,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteTimelineEntry, updateTimelineEntry,
       messages, conversations, activeConversationId, setActiveConversation,
       sendMessage, markMessagesRead, unreadCount,
+      createConversation, listContacts,
+      addChild, updateChildInfo, removeChild,
+      preferences, updatePreferences,
       todayStats, isCheckedIn, toggleCheckIn,
       notifications, unreadNotificationCount, markNotificationRead, markAllNotificationsRead, addNotification,
       incidents, addIncident,

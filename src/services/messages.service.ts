@@ -114,6 +114,36 @@ export const messagesService = {
     });
   },
 
+  // Atomic, RLS-safe conversation creation via the SECURITY DEFINER RPC.
+  // Caller is added automatically; participants are validated to be same-daycare.
+  createConversationRpc: async (
+    participantIds: string[],
+    type: 'direct' | 'group' | 'announcement' = 'direct',
+    title: string | null = null,
+  ): Promise<string> => {
+    const { data, error } = await supabase.rpc('create_conversation', {
+      p_participant_ids: participantIds,
+      p_type: type,
+      p_title: title,
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    if (!data?.conversation_id) throw new Error('No conversation id returned');
+    return data.conversation_id as string;
+  },
+
+  // List potential message recipients in the same daycare (excludes self).
+  listDaycareContacts: async (daycareId: string, excludeUserId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, role, avatar_url')
+      .eq('daycare_id', daycareId)
+      .neq('id', excludeUserId)
+      .order('first_name', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
   subscribeToConversation: (conversationId: string, callback: (payload: any) => void) => {
     return supabase
       .channel(`messages:${conversationId}`)

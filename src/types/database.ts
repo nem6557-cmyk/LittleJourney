@@ -89,12 +89,16 @@ export interface Database {
           daycare_id: string | null;
           push_token: string | null;
           coppa_consent_at: string | null;
+          stripe_customer_id: string | null;
+          preferences: Record<string, unknown>;
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['profiles']['Row'], 'created_at' | 'updated_at'> & {
+        Insert: Omit<Database['public']['Tables']['profiles']['Row'], 'created_at' | 'updated_at' | 'stripe_customer_id' | 'preferences'> & {
           created_at?: string;
           updated_at?: string;
+          stripe_customer_id?: string | null;
+          preferences?: Record<string, unknown>;
         };
         Update: Partial<Database['public']['Tables']['profiles']['Insert']>;
         Relationships: [
@@ -788,6 +792,14 @@ export interface Database {
           p_email?: string | null;
         };
         Returns: { error?: string | null; daycare_id?: string };
+      };
+      create_conversation: {
+        Args: {
+          p_participant_ids: string[];
+          p_type?: 'direct' | 'group' | 'announcement';
+          p_title?: string | null;
+        };
+        Returns: { error?: string | null; conversation_id?: string };
       };
     };
 
