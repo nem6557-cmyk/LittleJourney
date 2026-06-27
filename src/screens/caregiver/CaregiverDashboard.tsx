@@ -139,19 +139,25 @@ export const CaregiverDashboard = () => {
     setShowLogModal(true);
   };
 
-  // Upload photos to Supabase Storage, returning public/signed URLs
+  // Upload photos to Supabase Storage, returning public URLs. Failed uploads
+  // are skipped (never persisted as unviewable local file:// URIs). Demo/offline
+  // (no daycare) keeps local URIs since there is no backend to upload to.
   const uploadPhotos = async (uris: string[]): Promise<string[]> => {
     const daycareId = authProfile?.daycare_id;
-    if (!daycareId || isDemoMode) return uris; // In demo mode, keep local URIs
+    if (!daycareId || isDemoMode) return uris; // demo mode: keep local URIs
     const uploaded: string[] = [];
+    let failed = 0;
     for (const uri of uris) {
       try {
         const url = await storageService.uploadTimelinePhoto(daycareId, selectedChild.id, uri);
         uploaded.push(url);
       } catch (err) {
-        console.warn('[CaregiverDashboard] Photo upload failed, using local URI:', err);
-        uploaded.push(uri); // Graceful fallback
+        console.warn('[CaregiverDashboard] Photo upload failed, skipping this photo:', err);
+        failed += 1;
       }
+    }
+    if (failed > 0) {
+      showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
     }
     return uploaded;
   };
@@ -177,18 +183,42 @@ export const CaregiverDashboard = () => {
           title = napAction === 'sleeping' ? 'Nap Time Started' : 'Woke Up from Nap';
           details = { status: napAction };
           if (napAction === 'woke_up') {
-            const lastSleep = [...timelineEntries]
-              .filter((e) => e.childId === selectedChild.id && e.type === 'nap' && e.details?.status === 'sleeping')
-              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
-            if (lastSleep) {
-              const diffMs = Date.now() - new Date(lastSleep.timestamp).getTime();
-              const hours = Math.floor(diffMs / 3600000);
-              const mins = Math.floor((diffMs % 3600000) / 60000);
-              const duration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-              details.duration = duration;
-              details.startTime = lastSleep.timestamp;
-              if (!description) description = `Napped for ${duration}. Woke up refreshed.`;
+            // Pair this wake with the most recent UNMATCHED 'sleeping' entry for
+            // this child — i.e. a nap start that has no later wake yet. Walking
+            // the child's nap entries newest-first, the first 'sleeping' we hit
+            // before any 'woke_up' is the open session. If we hit a 'woke_up'
+            // first, the latest sleep was already closed, so there's no open nap.
+            const napHistory = timelineEntries
+              .filter((e) => e.childId === selectedChild.id && e.type === 'nap')
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            let openSleep: typeof napHistory[0] | undefined;
+            for (const e of napHistory) {
+              if (e.details?.status === 'woke_up') break; // latest nap already closed
+              if (e.details?.status === 'sleeping') { openSleep = e; break; }
             }
+            if (openSleep) {
+              const diffMs = Date.now() - new Date(openSleep.timestamp).getTime();
+              // Guard against clock skew / out-of-order data producing a negative
+              // span — never surface a bogus duration.
+              if (diffMs > 0) {
+                const hours = Math.floor(diffMs / 3600000);
+                const mins = Math.floor((diffMs % 3600000) / 60000);
+                const duration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+                details.duration = duration;
+                details.durationMinutes = Math.floor(diffMs / 60000);
+                details.startTime = openSleep.timestamp;
+                title = `Woke Up — Napped ${duration}`;
+                if (!description) description = `Napped ${duration}. Woke up refreshed.`;
+              } else if (!description) {
+                description = 'Woke up from nap.';
+              }
+            } else if (!description) {
+              // No matching open nap (no prior "started napping") — log the wake
+              // without inventing a duration.
+              description = 'Woke up from nap.';
+            }
+          } else if (!description) {
+            description = `${selectedChild.firstName} went down for a nap.`;
           }
           break;
         case 'diaper':

@@ -12,10 +12,10 @@ type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void 
 
 export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation }) => {
   const { children, attendance, timelineEntries, currentUser } = useApp();
-  const { profile } = useAuth();
+  const { profile, daycare } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
 
-  const daycareName = profile?.daycare_id ? 'Your Daycare' : 'Little Journey';
+  const daycareName = daycare?.name || (profile?.daycare_id ? 'Your Daycare' : 'Little Journey');
   const presentToday = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;
   const totalChildren = children.length;
   const todayEntries = timelineEntries.filter(
@@ -28,15 +28,15 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
     { icon: 'people' as const, label: 'Manage Children', desc: `${totalChildren} enrolled`, color: Colors.primary, screen: 'ManageChildren' },
     { icon: 'person-add' as const, label: 'Manage Staff', desc: 'Caregivers & teachers', color: Colors.info, screen: 'ManageStaff' },
     { icon: 'key' as const, label: 'Invite Codes', desc: 'Invite parents & staff', color: Colors.accent, screen: 'InviteCodes' },
-    { icon: 'grid' as const, label: 'Classrooms', desc: 'Rooms & assignments', color: Colors.success, screen: null },
-    { icon: 'calendar' as const, label: 'Calendar', desc: 'Events & closures', color: Colors.accent, screen: null },
+    { icon: 'grid' as const, label: 'Classrooms', desc: 'Rooms & assignments', color: Colors.success, screen: 'ManageClassrooms' },
+    { icon: 'calendar' as const, label: 'Calendar', desc: 'Events & closures', color: Colors.accent, screen: 'ManageCalendar' },
   ];
 
   const quickActions = [
     { icon: 'person-add-outline' as const, label: 'Add Child', color: Colors.primary, screen: 'ManageChildren' },
     { icon: 'key-outline' as const, label: 'Invite Codes', color: Colors.accent, screen: 'InviteCodes' },
-    { icon: 'mail-outline' as const, label: 'Send Announcement', color: Colors.secondary, screen: null },
-    { icon: 'document-text-outline' as const, label: 'Generate Report', color: Colors.info, screen: null },
+    { icon: 'mail-outline' as const, label: 'Send Announcement', color: Colors.secondary, screen: 'SendAnnouncement' },
+    { icon: 'document-text-outline' as const, label: 'Generate Report', color: Colors.info, screen: 'GenerateReport' },
   ];
 
   const handleManagementTap = (screen: string | null) => {

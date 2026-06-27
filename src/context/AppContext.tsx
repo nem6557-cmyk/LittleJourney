@@ -14,10 +14,12 @@ import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { timelineService } from '../services/timeline.service';
 import { messagesService } from '../services/messages.service';
+import { childrenService } from '../services/children.service';
 import { incidentsService } from '../services/incidents.service';
 import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
 import { attendanceService } from '../services/attendance.service';
+import { notificationsService } from '../services/notifications.service';
 import { registerForPushNotifications, dispatchPushNotification } from '../lib/notifications';
 import { onNetworkChange, processPendingMutations } from '../lib/offline';
 
@@ -55,6 +57,19 @@ interface AppContextType {
   sendMessage: (text: string, isUrgent?: boolean, conversationId?: string) => void;
   markMessagesRead: (conversationId?: string) => void;
   unreadCount: number;
+  createConversation: (participantIds: string[], title?: string) => Promise<{ conversationId: string | null; error: string | null }>;
+  listContacts: () => Promise<{ id: string; name: string; role: string }[]>;
+  editMessage: (messageId: string, text: string) => void;
+  deleteMessage: (messageId: string) => void;
+
+  // Child management
+  addChild: (data: { firstName: string; lastName: string; dateOfBirth: string }) => Promise<{ error: string | null }>;
+  updateChildInfo: (childId: string, updates: Partial<Child>) => Promise<{ error: string | null }>;
+  removeChild: (childId: string) => Promise<{ error: string | null }>;
+
+  // Preferences
+  preferences: Record<string, unknown>;
+  updatePreferences: (updates: Record<string, unknown>) => Promise<void>;
 
   // Stats
   todayStats: {
@@ -324,11 +339,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 senderId: m.sender_id,
                 senderName: senderProfile ? `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() : 'Unknown',
                 senderRole: (senderProfile?.role || 'parent') as UserRole,
-                text: m.text,
+                text: m.deleted_at ? '' : m.text,
                 timestamp: m.created_at,
                 read: false,
                 isUrgent: m.is_urgent,
                 attachments: m.attachments || [],
+                edited: !!m.edited_at,
+                deleted: !!m.deleted_at,
               };
             });
             setMessages(mappedMessages);
@@ -482,6 +499,63 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               location: e.location || undefined,
             }));
             setCalendarEvents(mappedEvents);
+          }
+        }
+
+        // ── Fetch notifications for this user ──
+        {
+          const { data: notifData } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('user_id', profile.id)
+            .order('created_at', { ascending: false })
+            .limit(100);
+          if (!cancelled && notifData) {
+            const mappedNotifs: Notification[] = notifData.map((n: any) => ({
+              id: n.id,
+              type: n.type || 'alert',
+              title: n.title,
+              body: n.body,
+              timestamp: n.created_at,
+              read: !!n.read_at, // read state derived from DB, not hardcoded
+              childId: n.data?.child_id || undefined,
+              actionRoute: n.data?.route || undefined,
+            }));
+            setNotifications(mappedNotifs);
+          }
+        }
+
+        // ── Fetch incidents (parent: their children; staff: whole daycare) ──
+        if (profile.daycare_id) {
+          const { data: incData } = await supabase
+            .from('incidents')
+            .select('*, child:children!child_id(first_name, last_name), reporter:profiles!reported_by(id, first_name, last_name, role)')
+            .eq('daycare_id', profile.daycare_id)
+            .order('created_at', { ascending: false })
+            .limit(100);
+          if (!cancelled && incData) {
+            const mappedIncidents: IncidentReport[] = incData.map((i: any) => ({
+              id: i.id,
+              childId: i.child_id,
+              daycareId: i.daycare_id,
+              childName: i.child ? `${i.child.first_name || ''} ${i.child.last_name || ''}`.trim() : '',
+              reportedBy: {
+                id: i.reporter?.id || i.reported_by,
+                name: i.reporter ? `${i.reporter.first_name || ''} ${i.reporter.last_name || ''}`.trim() : 'Staff',
+                role: (i.reporter?.role || 'caregiver') as UserRole,
+                email: '',
+              },
+              timestamp: i.created_at,
+              type: i.type,
+              severity: i.severity,
+              location: i.location || undefined,
+              description: i.description,
+              actionTaken: i.action_taken || '',
+              parentNotified: !!i.parent_notified_at,
+              witnessName: i.witness_name || undefined,
+              photos: i.photo_urls || undefined,
+            }));
+            setIncidents(mappedIncidents);
           }
         }
 
@@ -729,15 +803,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Only fall back to sample data in demo mode (no auth profile = Supabase not configured).
   const allChildren = useMemo(() => {
     if (fetchedChildren.length > 0) return fetchedChildren;
-    if (!auth.profile) {
-      // Demo mode — show sample data
+    // Demo mode sets a fake profile, so check isDemoMode too (not just !profile)
+    // — otherwise demo sessions showed an empty child ("Unknown" name).
+    if (!auth.profile || auth.isDemoMode) {
       return currentRole === 'parent' ? [layla, adam] : classroomChildren;
     }
     // Supabase configured but no children yet — return empty
     return [];
-  }, [fetchedChildren, auth.profile, currentRole]);
+  }, [fetchedChildren, auth.profile, auth.isDemoMode, currentRole]);
 
-  const emptyChild: Child = { id: '', firstName: '', lastName: '', dateOfBirth: '', classroom: '', allergies: [], emergencyContacts: [], authorizedPickups: [] };
+  // Graceful placeholder so screens never render a blank/"Unknown" name when no
+  // child is loaded yet (e.g. a parent whose children haven't synced).
+  const emptyChild: Child = { id: '', firstName: 'Your child', lastName: '', dateOfBirth: '', classroom: '', allergies: [], emergencyContacts: [], authorizedPickups: [] };
   const selectedChild = allChildren.find((c) => c.id === selectedChildId) || allChildren[0] || emptyChild;
 
   const login = useCallback((role: UserRole) => {
@@ -846,11 +923,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         )
       );
 
-      // Persist to Supabase
+      // Persist to Supabase and reconcile the temp id with the real DB id so a
+      // later delete targets the correct row (and remove the optimistic comment
+      // on failure rather than leaving a phantom).
       if (auth.profile) {
-        timelineService.addComment(entryId, auth.profile.id, text).catch((err) =>
-          console.warn('[AppContext] Failed to persist comment:', err)
-        );
+        timelineService
+          .addComment(entryId, auth.profile.id, text)
+          .then((row) => {
+            const realId = (row as { id?: string } | null)?.id;
+            if (!realId) return;
+            setTimelineEntries((prev) =>
+              prev.map((e) =>
+                e.id === entryId
+                  ? { ...e, comments: (e.comments || []).map((c) => (c.id === tempId ? { ...c, id: realId } : c)) }
+                  : e
+              )
+            );
+          })
+          .catch((err) => {
+            console.warn('[AppContext] Failed to persist comment:', err);
+            setTimelineEntries((prev) =>
+              prev.map((e) =>
+                e.id === entryId
+                  ? { ...e, comments: (e.comments || []).filter((c) => c.id !== tempId) }
+                  : e
+              )
+            );
+          });
       }
     },
     [currentUser, auth.profile]
@@ -859,27 +958,32 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // ── Reactions ──
   const toggleReaction = useCallback(
     (entryId: string, emoji: string) => {
-      setTimelineEntries((prev) =>
-        prev.map((e) => {
-          if (e.id !== entryId) return e;
-          const existing = (e.reactions || []).find(
-            (r) => r.userId === currentUser.id && r.emoji === emoji
-          );
-          if (existing) {
-            return { ...e, reactions: (e.reactions || []).filter((r) => r !== existing) };
-          }
-          return {
-            ...e,
-            reactions: [...(e.reactions || []), { userId: currentUser.id, emoji, timestamp: new Date().toISOString() }],
-          };
-        })
-      );
-
-      // Persist to Supabase
-      if (auth.profile) {
-        timelineService.toggleReaction(entryId, auth.profile.id, emoji).catch((err) =>
-          console.warn('[AppContext] Failed to persist reaction:', err)
+      // Self-inverse toggle: applying it again reverts it (used for rollback).
+      const applyToggle = () =>
+        setTimelineEntries((prev) =>
+          prev.map((e) => {
+            if (e.id !== entryId) return e;
+            const existing = (e.reactions || []).find(
+              (r) => r.userId === currentUser.id && r.emoji === emoji
+            );
+            if (existing) {
+              return { ...e, reactions: (e.reactions || []).filter((r) => r !== existing) };
+            }
+            return {
+              ...e,
+              reactions: [...(e.reactions || []), { userId: currentUser.id, emoji, timestamp: new Date().toISOString() }],
+            };
+          })
         );
+
+      applyToggle();
+
+      // Persist to Supabase; revert the optimistic toggle if it fails.
+      if (auth.profile) {
+        timelineService.toggleReaction(entryId, auth.profile.id, emoji).catch((err) => {
+          console.warn('[AppContext] Failed to persist reaction, reverting:', err);
+          applyToggle();
+        });
       }
     },
     [currentUser.id, auth.profile]
@@ -898,7 +1002,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // ── Update timeline entry ──
   const updateTimelineEntry = useCallback((entryId: string, updates: Partial<TimelineEntry>) => {
     setTimelineEntries((prev) => prev.map((e) => e.id === entryId ? { ...e, ...updates } : e));
-  }, []);
+    if (auth.profile) {
+      // Map the editable app fields onto the DB columns.
+      const dbUpdates: Record<string, unknown> = {};
+      if (updates.title !== undefined) dbUpdates.title = updates.title;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.mood !== undefined) dbUpdates.mood = updates.mood;
+      if (updates.details !== undefined) dbUpdates.metadata = updates.details;
+      if (Object.keys(dbUpdates).length > 0) {
+        timelineService.updateEntry(entryId, dbUpdates as any).catch((err) =>
+          console.warn('[AppContext] Failed to persist timeline entry update:', err)
+        );
+      }
+    }
+  }, [auth.profile]);
 
   // ── Delete comment ──
   const deleteComment = useCallback((entryId: string, commentId: string) => {
@@ -923,37 +1040,44 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
     setNotifications((prev) => [newNotif, ...prev]);
 
-    // Persist and dispatch push notification
-    if (auth.profile?.daycare_id && notif.childId) {
-      // Find parents of this child to notify them
+    // Persist and dispatch. With a childId we notify that child's parents; with
+    // no childId (e.g. an emergency alert) we fan out to the whole daycare.
+    if (auth.profile?.daycare_id) {
       (async () => {
         try {
-          const { data: parents } = await supabase
-            .from('parent_children')
-            .select('parent_id')
-            .eq('child_id', notif.childId!);
+          let recipientIds: string[];
+          if (notif.childId) {
+            const { data: parents } = await supabase
+              .from('parent_children')
+              .select('parent_id')
+              .eq('child_id', notif.childId);
+            recipientIds = (parents || []).map((p) => p.parent_id);
+          } else {
+            // Daycare-wide fan-out (e.g. emergency alert / announcement).
+            const { data: members } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('daycare_id', auth.profile!.daycare_id!);
+            recipientIds = (members || []).map((m) => m.id);
+          }
 
-          for (const p of (parents || [])) {
-            if (p.parent_id !== auth.profile?.id) {
-              // Insert notification record
-              await supabase.from('notifications').insert({
-                user_id: p.parent_id,
-                daycare_id: auth.profile!.daycare_id!,
-                type: notif.type as any,
-                title: notif.title,
-                body: notif.body,
-                data: { childId: notif.childId },
-              } as any);
-
-              // Dispatch push
-              dispatchPushNotification({
-                user_id: p.parent_id,
-                title: notif.title,
-                body: notif.body,
-                type: notif.type,
-                data: { childId: notif.childId },
-              });
-            }
+          for (const recipientId of recipientIds) {
+            if (recipientId === auth.profile?.id) continue; // don't notify the sender
+            await supabase.from('notifications').insert({
+              user_id: recipientId,
+              daycare_id: auth.profile!.daycare_id!,
+              type: notif.type as any,
+              title: notif.title,
+              body: notif.body,
+              data: notif.childId ? { childId: notif.childId } : {},
+            } as any);
+            dispatchPushNotification({
+              user_id: recipientId,
+              title: notif.title,
+              body: notif.body,
+              type: notif.type,
+              data: notif.childId ? { childId: notif.childId } : {},
+            });
           }
         } catch (err) {
           console.warn('[AppContext] Failed to dispatch notification:', err);
@@ -1035,6 +1159,140 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setActiveConversationId(id);
   }, []);
 
+  // ── Create a new conversation (atomic RPC) and make it active ──
+  const createConversation = useCallback(
+    async (participantIds: string[], title?: string): Promise<{ conversationId: string | null; error: string | null }> => {
+      if (!auth.profile) return { conversationId: null, error: 'Not signed in' };
+      try {
+        const type = participantIds.length > 1 ? 'group' : 'direct';
+        const convId = await messagesService.createConversationRpc(participantIds, type, title ?? null);
+        setActiveConversationId(convId);
+        setRefreshCounter((c) => c + 1); // pull in the new conversation
+        return { conversationId: convId, error: null };
+      } catch (err) {
+        console.warn('[AppContext] createConversation failed:', err);
+        return { conversationId: null, error: 'Could not start the conversation.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  // ── List same-daycare contacts (for the compose recipient picker) ──
+  const listContacts = useCallback(async (): Promise<{ id: string; name: string; role: string }[]> => {
+    if (!auth.profile?.daycare_id) return [];
+    try {
+      const rows = await messagesService.listDaycareContacts(auth.profile.daycare_id, auth.profile.id);
+      return rows.map((r) => ({
+        id: r.id,
+        name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Unknown',
+        role: r.role,
+      }));
+    } catch (err) {
+      console.warn('[AppContext] listContacts failed:', err);
+      return [];
+    }
+  }, [auth.profile]);
+
+  // ── Edit / delete a message (sender only; delete is a soft-delete) ──
+  const editMessage = useCallback((messageId: string, text: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, text, edited: true } : m)));
+    if (auth.profile) {
+      messagesService.editMessage(messageId, text).catch((err) =>
+        console.warn('[AppContext] Failed to edit message:', err)
+      );
+    }
+  }, [auth.profile]);
+
+  const deleteMessage = useCallback((messageId: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: true, text: '' } : m)));
+    if (auth.profile) {
+      messagesService.deleteMessage(messageId).catch((err) =>
+        console.warn('[AppContext] Failed to delete message:', err)
+      );
+    }
+  }, [auth.profile]);
+
+  // ── Child management (admin) ──
+  const addChild = useCallback(
+    async (data: { firstName: string; lastName: string; dateOfBirth: string }): Promise<{ error: string | null }> => {
+      if (!auth.profile?.daycare_id) return { error: 'No daycare associated with your account.' };
+      try {
+        await childrenService.createChild({
+          first_name: data.firstName,
+          last_name: data.lastName,
+          daycare_id: auth.profile.daycare_id,
+          date_of_birth: data.dateOfBirth,
+          classroom_id: null,
+          avatar_url: null,
+          medical_notes: null,
+        });
+        setRefreshCounter((c) => c + 1);
+        return { error: null };
+      } catch (err) {
+        console.warn('[AppContext] addChild failed:', err);
+        return { error: (err as Error).message || 'Failed to add child.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  const updateChildInfo = useCallback(
+    async (childId: string, updates: Partial<Child>): Promise<{ error: string | null }> => {
+      if (!auth.profile) return { error: 'Not signed in' };
+      try {
+        const dbUpdates: Record<string, unknown> = {};
+        if (updates.firstName !== undefined) dbUpdates.first_name = updates.firstName;
+        if (updates.lastName !== undefined) dbUpdates.last_name = updates.lastName;
+        if (updates.dateOfBirth !== undefined) dbUpdates.date_of_birth = updates.dateOfBirth;
+        if (updates.allergies !== undefined) dbUpdates.allergies = updates.allergies;
+        await childrenService.updateChild(childId, dbUpdates as any);
+        setRefreshCounter((c) => c + 1);
+        return { error: null };
+      } catch (err) {
+        console.warn('[AppContext] updateChildInfo failed:', err);
+        return { error: (err as Error).message || 'Failed to update child.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  const removeChild = useCallback(
+    async (childId: string): Promise<{ error: string | null }> => {
+      if (!auth.profile) return { error: 'Not signed in' };
+      try {
+        await childrenService.deleteChild(childId);
+        setRefreshCounter((c) => c + 1);
+        return { error: null };
+      } catch (err) {
+        console.warn('[AppContext] removeChild failed:', err);
+        return { error: (err as Error).message || 'Failed to remove child.' };
+      }
+    },
+    [auth.profile]
+  );
+
+  // ── User preferences (persisted to profiles.preferences) ──
+  const [preferences, setPreferences] = useState<Record<string, unknown>>({});
+  useEffect(() => {
+    const prefs = (auth.profile as { preferences?: Record<string, unknown> } | null)?.preferences;
+    if (prefs && typeof prefs === 'object') setPreferences(prefs);
+  }, [auth.profile]);
+
+  const updatePreferences = useCallback(
+    async (updates: Record<string, unknown>): Promise<void> => {
+      setPreferences((prev) => ({ ...prev, ...updates }));
+      if (auth.profile && !auth.isDemoMode) {
+        try {
+          const merged = { ...preferences, ...updates };
+          await supabase.from('profiles').update({ preferences: merged }).eq('id', auth.profile.id);
+        } catch (err) {
+          console.warn('[AppContext] updatePreferences failed:', err);
+        }
+      }
+    },
+    [auth.profile, auth.isDemoMode, preferences]
+  );
+
   // ── Check-in/out ──
   const toggleCheckIn = useCallback(() => {
     const action = isCheckedIn ? 'checkout' : 'checkin';
@@ -1090,11 +1348,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
-  }, []);
+    if (auth.profile) {
+      notificationsService.markRead(id).catch((err) =>
+        console.warn('[AppContext] Failed to persist notification read:', err)
+      );
+    }
+  }, [auth.profile]);
 
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
+    if (auth.profile) {
+      notificationsService.markAllRead(auth.profile.id).catch((err) =>
+        console.warn('[AppContext] Failed to persist mark-all-read:', err)
+      );
+    }
+  }, [auth.profile]);
 
   // ── Incidents ──
   const addIncident = useCallback(
@@ -1115,22 +1383,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         details: { severity: incident.severity, location: incident.location, actionTaken: incident.actionTaken },
         isUrgent: incident.severity !== 'minor',
       });
-      // Add notification
-      setNotifications((prev) => [
-        {
-          id: `n${Date.now()}`,
-          type: 'incident',
-          title: `Incident Report — ${incident.childName}`,
-          body: `${incident.type.replace('_', ' ')} (${incident.severity}) at ${incident.location}`,
-          timestamp: new Date().toISOString(),
-          read: false,
-          childId: incident.childId,
-          icon: '🚨',
-        },
-        ...prev,
-      ]);
 
-      // Persist incident to Supabase
+      // Notify the child's parents (addNotification fans out to parents + push
+      // when childId is set), so "the parent will be notified" is actually true.
+      addNotification({
+        type: 'incident',
+        title: `Incident Report — ${incident.childName}`,
+        body: `${incident.type.replace('_', ' ')} (${incident.severity})${incident.location ? ` at ${incident.location}` : ''}`,
+        read: false,
+        childId: incident.childId,
+        icon: '🚨',
+      });
+
+      // Persist incident to Supabase with witness + parent-notified timestamp.
       if (auth.profile && auth.profile.daycare_id) {
         incidentsService.createIncident({
           child_id: incident.childId,
@@ -1141,20 +1406,42 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           description: incident.description,
           location: incident.location || null,
           action_taken: incident.actionTaken || 'See description',
-          parent_notified_at: null,
-          witness_name: null,
+          parent_notified_at: incident.parentNotified ? new Date().toISOString() : null,
+          witness_name: incident.witnessName || null,
         }).catch((err) => console.warn('[AppContext] Failed to persist incident:', err));
       }
     },
-    [currentUser, addTimelineEntry, auth.profile]
+    [currentUser, addTimelineEntry, addNotification, auth.profile]
   );
 
   // ── Attendance ──
   const updateAttendance = useCallback((childId: string, update: Partial<AttendanceRecord>) => {
+    let merged: AttendanceRecord | undefined;
     setAttendance((prev) =>
-      prev.map((a) => (a.childId === childId ? { ...a, ...update } : a))
+      prev.map((a) => {
+        if (a.childId !== childId) return a;
+        merged = { ...a, ...update };
+        return merged;
+      })
     );
-  }, []);
+    // Persist the change (status / note / times) by upserting the child+date row.
+    if (auth.profile?.daycare_id && merged) {
+      const today = merged.date || new Date().toISOString().split('T')[0];
+      attendanceService
+        .checkIn({
+          child_id: childId,
+          daycare_id: auth.profile.daycare_id,
+          date: today,
+          status: merged.status,
+          check_in_at: merged.checkInTime ?? null,
+          check_in_by: merged.checkInBy ?? null,
+          check_out_at: merged.checkOutTime ?? null,
+          check_out_by: merged.checkOutBy ?? null,
+          notes: merged.note ?? null,
+        })
+        .catch((err) => console.warn('[AppContext] Failed to persist attendance update:', err));
+    }
+  }, [auth.profile]);
 
   // ── Invoices ──
   // Payment goes through Stripe: the create-invoice edge function finalizes a
@@ -1271,7 +1558,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [timelineEntries, selectedChild]);
 
   // ── Data persistence ──
-  const STORAGE_KEY = 'littlejourney_data';
+  // Namespace the offline cache per user so one account never loads another's
+  // cached data. Falls back to a guest bucket when signed out.
+  const CACHE_PREFIX = 'littlejourney_data_';
+  const cacheUserId = auth.user?.id || (auth.isDemoMode ? `demo_${currentRole}` : 'guest');
+  const STORAGE_KEY = `${CACHE_PREFIX}${cacheUserId}`;
 
   // Save state to AsyncStorage whenever key data changes
   useEffect(() => {
@@ -1295,7 +1586,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // Debounce saves
     const timer = setTimeout(saveData, 500);
     return () => clearTimeout(timer);
-  }, [timelineEntries, messages, conversations, notifications, incidents, attendance, invoices, isCheckedIn]);
+  }, [STORAGE_KEY, timelineEntries, messages, conversations, notifications, incidents, attendance, invoices, isCheckedIn]);
+
+  // One-time migration/cleanup: drop the old un-namespaced global cache key so a
+  // previous user's data can't bleed in.
+  useEffect(() => {
+    AsyncStorage.removeItem('littlejourney_data').catch(() => {});
+  }, []);
 
   // Load persisted state and auth on mount
   useEffect(() => {
@@ -1311,6 +1608,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
+        // Load this user's namespaced cache (offline fallback).
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const data = JSON.parse(raw);
@@ -1330,7 +1628,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
     };
     loadData();
-  }, []);
+    // Re-run when the namespaced key changes (user logs in/out) so we never show
+    // a different account's cached data.
+  }, [STORAGE_KEY]);
 
 
 
@@ -1355,6 +1655,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteTimelineEntry, updateTimelineEntry,
       messages, conversations, activeConversationId, setActiveConversation,
       sendMessage, markMessagesRead, unreadCount,
+      createConversation, listContacts, editMessage, deleteMessage,
+      addChild, updateChildInfo, removeChild,
+      preferences, updatePreferences,
       todayStats, isCheckedIn, toggleCheckIn,
       notifications, unreadNotificationCount, markNotificationRead, markAllNotificationsRead, addNotification,
       incidents, addIncident,
@@ -1374,6 +1677,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteTimelineEntry, updateTimelineEntry,
       messages, conversations, activeConversationId, setActiveConversation,
       sendMessage, markMessagesRead, unreadCount,
+      createConversation, listContacts, editMessage, deleteMessage,
+      addChild, updateChildInfo, removeChild,
+      preferences, updatePreferences,
       todayStats, isCheckedIn, toggleCheckIn,
       notifications, unreadNotificationCount, markNotificationRead, markAllNotificationsRead, addNotification,
       incidents, addIncident,

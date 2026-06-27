@@ -108,6 +108,8 @@ export interface Message {
   isUrgent?: boolean;
   attachments?: string[];
   replyTo?: string;
+  edited?: boolean;
+  deleted?: boolean;
 }
 
 export interface Conversation {

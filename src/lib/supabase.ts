@@ -87,8 +87,11 @@ const ExpoSecureStoreAdapter = {
  * - Detects session from URL (for OAuth redirect flows)
  */
 export const supabase = createClient<Database>(
-  config.supabaseUrl,
-  config.supabaseAnonKey,
+  // Fall back to a syntactically-valid placeholder when unconfigured so
+  // createClient() doesn't throw "supabaseUrl is required" at module load
+  // (which would crash the app before demo mode / graceful degradation).
+  config.supabaseUrl || 'https://placeholder.supabase.co',
+  config.supabaseAnonKey || 'placeholder-anon-key',
   {
     auth: {
       storage: ExpoSecureStoreAdapter,

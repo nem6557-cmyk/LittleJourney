@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Linking,
+  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { signUpSchema } from '../../lib/validators';
-import { config } from '../../lib/config';
 import type { UserRole } from '../../types';
+import { PrivacyPolicyScreen } from '../legal/PrivacyPolicyScreen';
+import { TermsOfServiceScreen } from '../legal/TermsOfServiceScreen';
 
 interface SignUpScreenProps {
   navigation?: any;
@@ -27,6 +28,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNaviga
   const [selectedRole, setSelectedRole] = useState<'parent' | 'caregiver' | 'admin'>('parent');
   const [showPassword, setShowPassword] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [legalModal, setLegalModal] = useState<null | 'privacy' | 'terms'>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -170,9 +172,9 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNaviga
             </View>
             <Text style={styles.checkText}>
               I agree to the{' '}
-              <Text style={styles.link} onPress={() => Linking.openURL(config.termsUrl)}>Terms of Service</Text>
+              <Text style={styles.link} onPress={() => setLegalModal('terms')}>Terms of Service</Text>
               {' '}and{' '}
-              <Text style={styles.link} onPress={() => Linking.openURL(config.privacyPolicyUrl)}>Privacy Policy</Text>
+              <Text style={styles.link} onPress={() => setLegalModal('privacy')}>Privacy Policy</Text>
             </Text>
           </TouchableOpacity>
           {errors.agreeToTerms && <Text style={styles.errorText}>{errors.agreeToTerms}</Text>}
@@ -213,6 +215,12 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNaviga
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* In-app legal screens (replaces opening external, possibly-404 URLs) */}
+      <Modal visible={legalModal !== null} animationType="slide" onRequestClose={() => setLegalModal(null)}>
+        {legalModal === 'terms' && <TermsOfServiceScreen onClose={() => setLegalModal(null)} />}
+        {legalModal === 'privacy' && <PrivacyPolicyScreen onClose={() => setLegalModal(null)} />}
+      </Modal>
     </KeyboardAvoidingView>
   );
 };

@@ -60,3 +60,7 @@ google-services.json
 nul
 
 .env.local
+
+# Playwright MCP scratch (screenshots, snapshots, console logs)
+.playwright-mcp/
+*.playwright-mcp.png

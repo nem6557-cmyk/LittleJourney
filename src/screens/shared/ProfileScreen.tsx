@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { File, Paths } from 'expo-file-system';
@@ -36,7 +36,7 @@ interface MenuSection {
 }
 
 export const ProfileScreen = () => {
-  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents } = useApp();
+  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents, preferences, updatePreferences } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const auth = useAuth();
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
@@ -44,7 +44,7 @@ export const ProfileScreen = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [smartNotifs, setSmartNotifs] = useState(true);
-  const [biometric, setBiometric] = useState(true);
+  const [biometric, setBiometric] = useState(false);
   const [offlineMode, setOfflineMode] = useState(true);
   const [paymentCard, setPaymentCard] = useState<{ type: string; last4: string } | null>(null);
 
@@ -81,6 +81,7 @@ export const ProfileScreen = () => {
         if (saved) {
           const prefs = JSON.parse(saved);
           if (prefs.smartNotifs !== undefined) setSmartNotifs(prefs.smartNotifs);
+          if (prefs.biometricEnabled !== undefined) setBiometric(prefs.biometricEnabled);
           if (prefs.mealNotifs !== undefined) setMealNotifs(prefs.mealNotifs);
           if (prefs.napNotifs !== undefined) setNapNotifs(prefs.napNotifs);
           if (prefs.photoNotifs !== undefined) setPhotoNotifs(prefs.photoNotifs);
@@ -100,11 +101,41 @@ export const ProfileScreen = () => {
     })();
   }, []);
 
+  // Seed notification & privacy toggles from the server-backed preferences object
+  // (profiles.preferences) once it loads. AppContext is the source of truth; the
+  // AsyncStorage load above remains as an offline cache. Server values win when present.
+  const prefsSeeded = React.useRef(false);
+  useEffect(() => {
+    if (prefsSeeded.current) return;
+    if (!preferences || Object.keys(preferences).length === 0) return;
+    prefsSeeded.current = true;
+    if (typeof preferences.smartNotifs === 'boolean') setSmartNotifs(preferences.smartNotifs);
+    if (typeof preferences.biometricEnabled === 'boolean') setBiometric(preferences.biometricEnabled);
+    if (typeof preferences.mealNotifs === 'boolean') setMealNotifs(preferences.mealNotifs);
+    if (typeof preferences.napNotifs === 'boolean') setNapNotifs(preferences.napNotifs);
+    if (typeof preferences.photoNotifs === 'boolean') setPhotoNotifs(preferences.photoNotifs);
+    if (typeof preferences.milestoneNotifs === 'boolean') setMilestoneNotifs(preferences.milestoneNotifs);
+    if (typeof preferences.photoSharing === 'boolean') setPhotoSharing(preferences.photoSharing);
+    if (typeof preferences.classPhotos === 'boolean') setClassPhotos(preferences.classPhotos);
+    if (typeof preferences.analyticsSharing === 'boolean') setAnalyticsSharing(preferences.analyticsSharing);
+  }, [preferences]);
+
+  // Toggle a notification/privacy preference: update local state, persist to
+  // AppContext (profiles.preferences), and let the existing AsyncStorage effect
+  // cache it offline.
+  const togglePref = useCallback(
+    (key: string, value: boolean, setter: (v: boolean) => void) => {
+      setter(value);
+      updatePreferences({ [key]: value });
+    },
+    [updatePreferences]
+  );
+
   // Save preferences to AsyncStorage whenever they change
   const savePreferences = useCallback(async () => {
     try {
       await AsyncStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify({
-        smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
+        smartNotifs, biometricEnabled: biometric, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
         photoSharing, classPhotos, analyticsSharing,
         selectedLanguage, autoTranslate, targetLanguage,
         autoPayEnabled, autoPayDay,
@@ -112,7 +143,7 @@ export const ProfileScreen = () => {
     } catch {
       // Best-effort persistence; a failed write is non-fatal.
     }
-  }, [smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
+  }, [smartNotifs, biometric, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
       photoSharing, classPhotos, analyticsSharing,
       selectedLanguage, autoTranslate, targetLanguage,
       autoPayEnabled, autoPayDay]);
@@ -145,11 +176,60 @@ export const ProfileScreen = () => {
   const [personRelation, setPersonRelation] = useState('');
   const [personPhone, setPersonPhone] = useState('');
 
+  // Persist biometric on/off to AppContext (profiles.preferences) + local state.
+  // The existing AsyncStorage effect caches `biometric` offline.
+  const setBiometricEnabled = useCallback(
+    (value: boolean) => {
+      setBiometric(value);
+      updatePreferences({ biometricEnabled: value });
+    },
+    [updatePreferences]
+  );
+
+  // Make the Biometric Login toggle real using expo-local-authentication.
+  // Native-only module: imported lazily inside the handler and guarded with
+  // Platform.OS so the web bundle never pulls it in.
+  const handleBiometricToggle = useCallback(async () => {
+    // Turning OFF never requires hardware — just persist.
+    if (biometric) {
+      setBiometricEnabled(false);
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      showAlert('Biometric Login', 'Biometric login is available in the mobile app.');
+      return;
+    }
+
+    try {
+      const LocalAuthentication = await import('expo-local-authentication');
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!hasHardware || !isEnrolled) {
+        showAlert(
+          'Biometrics Unavailable',
+          'This device has no biometrics set up. Enable Face ID, Touch ID, or fingerprint in your device settings first.'
+        );
+        return;
+      }
+
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Confirm to enable biometric login',
+      });
+      if (result.success) {
+        setBiometricEnabled(true);
+      }
+      // On failure/cancel, leave the toggle OFF.
+    } catch {
+      showAlert('Biometrics Unavailable', 'Could not access biometric authentication on this device.');
+    }
+  }, [biometric, setBiometricEnabled, showAlert]);
+
   const handleMenuTap = (label: string, sub?: SubScreen) => {
     if (sub) {
       setSubScreen(sub);
     } else if (label === 'Biometric Login') {
-      setBiometric(!biometric);
+      handleBiometricToggle();
     } else if (label === 'Offline Mode') {
       setOfflineMode(!offlineMode);
     } else {
@@ -471,7 +551,7 @@ export const ProfileScreen = () => {
               Little Journey is a childcare communication app that keeps parents connected with their child's daily experiences. From real-time activity updates and milestone tracking to secure messaging and daily reports — everything you need in one place.
             </Text>
             <Text style={styles.subSectionTitle}>Features</Text>
-            {['Real-time timeline of your child\'s day', 'Secure parent-caregiver messaging', 'AI-generated daily narrative reports', 'Developmental milestone tracking', 'Photo gallery and sharing', 'Calendar and event management', 'Invoice and payment management', 'Incident reporting and attendance tracking', 'PDF report export'].map((feature, i) => (
+            {['Real-time timeline of your child\'s day', 'Secure parent-caregiver messaging', 'Daily narrative summary reports', 'Developmental milestone tracking', 'Photo gallery and sharing', 'Calendar and event management', 'Invoice and payment management', 'Incident reporting and attendance tracking', 'PDF report export'].map((feature, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 6 }}>
                 <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
                 <Text style={{ fontSize: FontSizes.md, color: Colors.textSecondary }}>{feature}</Text>
@@ -488,11 +568,11 @@ export const ProfileScreen = () => {
           <View>
             <Text style={styles.subTitle}>Notification Preferences</Text>
             {[
-              { label: 'Smart Notifications', desc: 'Only get notified for important updates', value: smartNotifs, onToggle: setSmartNotifs },
-              { label: 'Meal Updates', desc: 'Get notified when meals are logged', value: mealNotifs, onToggle: setMealNotifs },
-              { label: 'Nap Updates', desc: 'Get notified for nap start/end', value: napNotifs, onToggle: setNapNotifs },
-              { label: 'Photo Alerts', desc: 'New photos shared by caregiver', value: photoNotifs, onToggle: setPhotoNotifs },
-              { label: 'Milestone Alerts', desc: 'New developmental milestones', value: milestoneNotifs, onToggle: setMilestoneNotifs },
+              { label: 'Smart Notifications', desc: 'Only get notified for important updates', value: smartNotifs, onToggle: (v: boolean) => togglePref('smartNotifs', v, setSmartNotifs) },
+              { label: 'Meal Updates', desc: 'Get notified when meals are logged', value: mealNotifs, onToggle: (v: boolean) => togglePref('mealNotifs', v, setMealNotifs) },
+              { label: 'Nap Updates', desc: 'Get notified for nap start/end', value: napNotifs, onToggle: (v: boolean) => togglePref('napNotifs', v, setNapNotifs) },
+              { label: 'Photo Alerts', desc: 'New photos shared by caregiver', value: photoNotifs, onToggle: (v: boolean) => togglePref('photoNotifs', v, setPhotoNotifs) },
+              { label: 'Milestone Alerts', desc: 'New developmental milestones', value: milestoneNotifs, onToggle: (v: boolean) => togglePref('milestoneNotifs', v, setMilestoneNotifs) },
               { label: 'Emergency Alerts', desc: 'Cannot be disabled', value: true, onToggle: () => {} },
             ].map((pref, i) => (
               <View key={i} style={styles.prefRow}>
@@ -514,9 +594,9 @@ export const ProfileScreen = () => {
             <Text style={styles.subTitle}>Privacy Settings</Text>
             <Text style={styles.subDesc}>Control how your data is shared</Text>
             {[
-              { label: 'Photo Sharing', desc: 'Allow caregivers to share photos of your child', value: photoSharing, onToggle: setPhotoSharing },
-              { label: 'Class Photos', desc: 'Include your child in class group photos', value: classPhotos, onToggle: setClassPhotos },
-              { label: 'Analytics', desc: 'Share anonymized usage data to improve the app', value: analyticsSharing, onToggle: setAnalyticsSharing },
+              { label: 'Photo Sharing', desc: 'Allow caregivers to share photos of your child', value: photoSharing, onToggle: (v: boolean) => togglePref('photoSharing', v, setPhotoSharing) },
+              { label: 'Class Photos', desc: 'Include your child in class group photos', value: classPhotos, onToggle: (v: boolean) => togglePref('classPhotos', v, setClassPhotos) },
+              { label: 'Analytics', desc: 'Share anonymized usage data to improve the app', value: analyticsSharing, onToggle: (v: boolean) => togglePref('analyticsSharing', v, setAnalyticsSharing) },
             ].map((pref, i) => (
               <View key={i} style={styles.prefRow}>
                 <View style={styles.prefInfo}><Text style={styles.prefLabel}>{pref.label}</Text><Text style={styles.prefDesc}>{pref.desc}</Text></View>
@@ -977,7 +1057,7 @@ export const ProfileScreen = () => {
             </View>
             <View style={styles.badge}>
               <Ionicons name="lock-closed" size={14} color={Colors.primary} />
-              <Text style={styles.badgeText}>End-to-End Encrypted</Text>
+              <Text style={styles.badgeText}>Encrypted & Secure</Text>
             </View>
           </View>
         </TouchableOpacity>

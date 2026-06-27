@@ -77,6 +77,45 @@ export interface Database {
         ];
       };
 
+      announcements: {
+        Row: {
+          id: string;
+          daycare_id: string;
+          author_id: string;
+          title: string;
+          body: string;
+          audience: string;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['announcements']['Row'], 'id' | 'created_at' | 'audience'> & {
+          id?: string;
+          created_at?: string;
+          audience?: string;
+        };
+        Update: Partial<Database['public']['Tables']['announcements']['Insert']>;
+        Relationships: [];
+      };
+
+      coppa_consents: {
+        Row: {
+          id: string;
+          parent_id: string;
+          child_id: string | null;
+          daycare_id: string | null;
+          policy_version: string;
+          signed_name: string;
+          consented: boolean;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['coppa_consents']['Row'], 'id' | 'created_at' | 'consented'> & {
+          id?: string;
+          created_at?: string;
+          consented?: boolean;
+        };
+        Update: Partial<Database['public']['Tables']['coppa_consents']['Insert']>;
+        Relationships: [];
+      };
+
       profiles: {
         Row: {
           id: string;
@@ -89,12 +128,16 @@ export interface Database {
           daycare_id: string | null;
           push_token: string | null;
           coppa_consent_at: string | null;
+          stripe_customer_id: string | null;
+          preferences: Record<string, unknown>;
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['profiles']['Row'], 'created_at' | 'updated_at'> & {
+        Insert: Omit<Database['public']['Tables']['profiles']['Row'], 'created_at' | 'updated_at' | 'stripe_customer_id' | 'preferences'> & {
           created_at?: string;
           updated_at?: string;
+          stripe_customer_id?: string | null;
+          preferences?: Record<string, unknown>;
         };
         Update: Partial<Database['public']['Tables']['profiles']['Insert']>;
         Relationships: [
@@ -373,13 +416,17 @@ export interface Database {
           text: string;
           attachments: string[];
           is_urgent: boolean;
+          edited_at: string | null;
+          deleted_at: string | null;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['messages']['Row'], 'id' | 'created_at' | 'attachments' | 'is_urgent'> & {
+        Insert: Omit<Database['public']['Tables']['messages']['Row'], 'id' | 'created_at' | 'attachments' | 'is_urgent' | 'edited_at' | 'deleted_at'> & {
           id?: string;
           created_at?: string;
           attachments?: string[];
           is_urgent?: boolean;
+          edited_at?: string | null;
+          deleted_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
         Relationships: [
@@ -788,6 +835,14 @@ export interface Database {
           p_email?: string | null;
         };
         Returns: { error?: string | null; daycare_id?: string };
+      };
+      create_conversation: {
+        Args: {
+          p_participant_ids: string[];
+          p_type?: 'direct' | 'group' | 'announcement';
+          p_title?: string | null;
+        };
+        Returns: { error?: string | null; conversation_id?: string };
       };
     };
 

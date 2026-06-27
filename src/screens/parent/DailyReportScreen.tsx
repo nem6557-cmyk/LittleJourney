@@ -17,6 +17,8 @@ export const DailyReportScreen = () => {
   const [showFullNarrative, setShowFullNarrative] = useState(false);
   const [showEntries, setShowEntries] = useState(false);
   const [thanked, setThanked] = useState(false);
+  // Date navigation: defaults to today; user can step back to view past days.
+  const [viewDate, setViewDate] = useState(() => new Date());
 
   if (!selectedChild || !currentUser) {
     return (
@@ -26,14 +28,17 @@ export const DailyReportScreen = () => {
     );
   }
 
-  const todayDate = new Date().toISOString().split('T')[0];
+  const todayDate = viewDate.toISOString().split('T')[0];
+  const isToday = viewDate.toDateString() === new Date().toDateString();
+  const goPrevDay = () => setViewDate((d) => new Date(d.getTime() - 86400000));
+  const goNextDay = () => { if (!isToday) setViewDate((d) => new Date(d.getTime() + 86400000)); };
 
   const childEntries = useMemo(
     () =>
       timelineEntries
-        .filter((e) => e.childId === selectedChild.id && new Date(e.timestamp).toDateString() === new Date().toDateString())
+        .filter((e) => e.childId === selectedChild.id && new Date(e.timestamp).toDateString() === viewDate.toDateString())
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
-    [timelineEntries, selectedChild.id]
+    [timelineEntries, selectedChild.id, viewDate]
   );
 
   const childInitial = selectedChild.firstName.charAt(0);
@@ -48,9 +53,25 @@ export const DailyReportScreen = () => {
   const caregiverName = todayCaregiver?.name || 'Your caregiver';
   const caregiverInitial = caregiverName.replace(/^(Ms\.|Mr\.|Mrs\.|Dr\.)\s*/, '').charAt(0);
 
-  // Dynamic report generation
-  const narrative = useMemo(() => generateDailyNarrative(), [generateDailyNarrative]);
-  const highlights = useMemo(() => generateHighlights(), [generateHighlights]);
+  // Stats for the viewed day, derived from the date-scoped entries so the
+  // report is correct for past days (todayStats from context is today-only).
+  const dayStats = useMemo(() => {
+    const count = (t: string) => childEntries.filter((e) => e.type === t).length;
+    const moodEntry = [...childEntries].reverse().find((e) => e.mood);
+    return {
+      meals: count('meal'),
+      naps: count('nap'),
+      napDuration: isToday ? todayStats.napDuration : '',
+      diaperChanges: count('diaper'),
+      activities: count('activity'),
+      photos: childEntries.reduce((n, e) => n + (e.photos?.length || 0), 0),
+      currentMood: (moodEntry?.mood || (isToday ? todayStats.currentMood : 'happy')) as typeof todayStats.currentMood,
+    };
+  }, [childEntries, isToday, todayStats]);
+
+  // Dynamic report generation (today only; past days show the entry list).
+  const narrative = useMemo(() => (isToday ? generateDailyNarrative() : ''), [generateDailyNarrative, isToday]);
+  const highlights = useMemo(() => (isToday ? generateHighlights() : []), [generateHighlights, isToday]);
 
   const handleShare = () => {
     const summary = `${selectedChild.firstName}'s Daily Report - ${formatDate(todayDate)}\n\n${narrative}\n\n--- Shared from Little Journey`;
@@ -86,11 +107,11 @@ export const DailyReportScreen = () => {
         <div class="date">${formatDate(todayDate)} &bull; ${selectedChild.classroom || 'School'}</div>
 
         <div class="stats">
-          <div class="stat"><div class="stat-value">${todayStats.meals}</div><div class="stat-label">Meals</div></div>
-          <div class="stat"><div class="stat-value">${todayStats.naps}</div><div class="stat-label">Naps</div></div>
-          <div class="stat"><div class="stat-value">${todayStats.diaperChanges}</div><div class="stat-label">Diapers</div></div>
-          <div class="stat"><div class="stat-value">${todayStats.activities}</div><div class="stat-label">Activities</div></div>
-          <div class="stat"><div class="stat-value">${todayStats.photos}</div><div class="stat-label">Photos</div></div>
+          <div class="stat"><div class="stat-value">${dayStats.meals}</div><div class="stat-label">Meals</div></div>
+          <div class="stat"><div class="stat-value">${dayStats.naps}</div><div class="stat-label">Naps</div></div>
+          <div class="stat"><div class="stat-value">${dayStats.diaperChanges}</div><div class="stat-label">Diapers</div></div>
+          <div class="stat"><div class="stat-value">${dayStats.activities}</div><div class="stat-label">Activities</div></div>
+          <div class="stat"><div class="stat-value">${dayStats.photos}</div><div class="stat-label">Photos</div></div>
         </div>
 
         <h2>Highlights</h2>
@@ -121,19 +142,20 @@ export const DailyReportScreen = () => {
       } else {
         showAlert('PDF Saved', `Report saved to: ${uri}`);
       }
-    } catch {
-      showAlert('Report Saved', `${selectedChild.firstName}'s daily report has been saved.`);
+    } catch (err) {
+      console.warn('[DailyReport] PDF export failed:', err);
+      showAlert('Export Failed', 'We could not generate the PDF report. Please try again.');
     }
   };
 
   const handleThank = () => {
-    // Find the conversation with the caregiver (not hardcoded)
+    // Send only into a real caregiver conversation — never fall back to
+    // conversations[0], which could thank an admin or the wrong caregiver.
     const caregiverConv = conversations.find((c) =>
       c.participants.some((p) => p.role === 'caregiver' && p.id !== currentUser.id)
     );
-    const convId = caregiverConv?.id || conversations[0]?.id;
+    const convId = caregiverConv?.id;
     if (!convId) {
-      // No conversation to send into — don't claim success.
       showAlert(
         'No conversation yet',
         `You don't have a message thread with ${caregiverName} yet. Start a conversation from Messages to send your thanks.`
@@ -159,13 +181,27 @@ export const DailyReportScreen = () => {
         style={styles.header}
       >
         <Text style={styles.headerTitle}>Daily Report</Text>
-        <Text style={styles.headerDate}>{formatDate(todayDate)}</Text>
+        <View style={styles.dateNav}>
+          <TouchableOpacity onPress={goPrevDay} style={styles.dateNavBtn} accessibilityLabel="Previous day" accessibilityRole="button">
+            <Ionicons name="chevron-back" size={20} color={Colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerDate}>{isToday ? 'Today' : formatDate(todayDate)}</Text>
+          <TouchableOpacity
+            onPress={goNextDay}
+            disabled={isToday}
+            style={[styles.dateNavBtn, isToday && { opacity: 0.3 }]}
+            accessibilityLabel="Next day"
+            accessibilityRole="button"
+          >
+            <Ionicons name="chevron-forward" size={20} color={Colors.white} />
+          </TouchableOpacity>
+        </View>
         <View style={styles.headerChild}>
           <View style={styles.childAvatar}>
             <Text style={styles.childAvatarText}>{childInitial}</Text>
           </View>
           <Text style={styles.childName}>{selectedChild.firstName}'s Day</Text>
-          <Text style={styles.moodEmoji}>{getMoodEmoji(todayStats.currentMood)}</Text>
+          <Text style={styles.moodEmoji}>{getMoodEmoji(dayStats.currentMood)}</Text>
         </View>
       </LinearGradient>
 
@@ -174,34 +210,34 @@ export const DailyReportScreen = () => {
         <View style={styles.summaryGrid}>
           <View style={[styles.summaryCard, Shadows.small]}>
             <Text style={styles.summaryEmoji}>🍽️</Text>
-            <Text style={styles.summaryValue}>{todayStats.meals}</Text>
+            <Text style={styles.summaryValue}>{dayStats.meals}</Text>
             <Text style={styles.summaryLabel}>Meals</Text>
           </View>
           <View style={[styles.summaryCard, Shadows.small]}>
             <Text style={styles.summaryEmoji}>😴</Text>
-            <Text style={styles.summaryValue}>{todayStats.naps}</Text>
+            <Text style={styles.summaryValue}>{dayStats.naps}</Text>
             <Text style={styles.summaryLabel}>Nap</Text>
-            <Text style={styles.summaryExtra}>{todayStats.napDuration}</Text>
+            <Text style={styles.summaryExtra}>{dayStats.napDuration}</Text>
           </View>
           <View style={[styles.summaryCard, Shadows.small]}>
             <Text style={styles.summaryEmoji}>👶</Text>
-            <Text style={styles.summaryValue}>{todayStats.diaperChanges}</Text>
+            <Text style={styles.summaryValue}>{dayStats.diaperChanges}</Text>
             <Text style={styles.summaryLabel}>Diapers</Text>
           </View>
           <View style={[styles.summaryCard, Shadows.small]}>
             <Text style={styles.summaryEmoji}>🎨</Text>
-            <Text style={styles.summaryValue}>{todayStats.activities}</Text>
+            <Text style={styles.summaryValue}>{dayStats.activities}</Text>
             <Text style={styles.summaryLabel}>Activities</Text>
           </View>
           <View style={[styles.summaryCard, Shadows.small]}>
             <Text style={styles.summaryEmoji}>📸</Text>
-            <Text style={styles.summaryValue}>{todayStats.photos}</Text>
+            <Text style={styles.summaryValue}>{dayStats.photos}</Text>
             <Text style={styles.summaryLabel}>Photos</Text>
           </View>
           <View style={[styles.summaryCard, Shadows.small]}>
-            <Text style={styles.summaryEmoji}>{getMoodEmoji(todayStats.currentMood)}</Text>
+            <Text style={styles.summaryEmoji}>{getMoodEmoji(dayStats.currentMood)}</Text>
             <Text style={styles.summaryValue}>
-              {todayStats.currentMood.charAt(0).toUpperCase() + todayStats.currentMood.slice(1)}
+              {dayStats.currentMood.charAt(0).toUpperCase() + dayStats.currentMood.slice(1)}
             </Text>
             <Text style={styles.summaryLabel}>Mood</Text>
           </View>
@@ -221,7 +257,7 @@ export const DailyReportScreen = () => {
           ))}
         </View>
 
-        {/* AI Narrative — dynamically generated */}
+        {/* Daily narrative — generated from the day's logged activities (template-based, not AI) */}
         <View style={[styles.section, styles.narrativeSection, Shadows.small]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionIcon}>📖</Text>
@@ -322,7 +358,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: { paddingTop: 60, paddingBottom: Spacing.xl, paddingHorizontal: Spacing.lg, borderBottomLeftRadius: BorderRadius.xl, borderBottomRightRadius: BorderRadius.xl },
   headerTitle: { fontSize: FontSizes.xxl, color: Colors.white, fontWeight: '800' },
-  headerDate: { fontSize: FontSizes.md, color: 'rgba(255,255,255,0.8)', marginTop: Spacing.xs },
+  headerDate: { fontSize: FontSizes.md, color: 'rgba(255,255,255,0.9)', fontWeight: '600', minWidth: 140, textAlign: 'center' },
+  dateNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: Spacing.xs, gap: Spacing.sm },
+  dateNavBtn: { padding: Spacing.xs },
   headerChild: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.lg, gap: Spacing.sm },
   childAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' },
   childAvatarText: { fontSize: FontSizes.lg, color: Colors.white, fontWeight: '700' },

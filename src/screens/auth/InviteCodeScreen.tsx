@@ -94,37 +94,43 @@ export const InviteCodeScreen: React.FC = () => {
           </LinearGradient>
         </TouchableOpacity>
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {/* Demo daycare is a development/pilot affordance only — never shown in
+            production so real users can't self-join the shared sample tenant. */}
+        {__DEV__ && (
+          <>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-        <TouchableOpacity
-          style={[styles.demoBtn, isJoiningDemo && styles.btnDisabled]}
-          onPress={async () => {
-            setIsJoiningDemo(true);
-            setError('');
-            const { error: joinError } = await joinDemoDaycare();
-            if (joinError) {
-              setError(joinError);
-            }
-            setIsJoiningDemo(false);
-          }}
-          disabled={isJoiningDemo}
-          accessibilityLabel="Join demo daycare"
-          accessibilityRole="button"
-        >
-          {isJoiningDemo ? <ActivityIndicator color={Colors.primary} /> : (
-            <>
-              <Ionicons name="school-outline" size={20} color={Colors.primary} />
-              <Text style={styles.demoBtnText}>Join Demo Daycare (Pilot)</Text>
-            </>
-          )}
-        </TouchableOpacity>
-        <Text style={styles.demoHint}>
-          Try the app with Sunshine Academy, a pre-configured demo daycare with sample children and classrooms.
-        </Text>
+            <TouchableOpacity
+              style={[styles.demoBtn, isJoiningDemo && styles.btnDisabled]}
+              onPress={async () => {
+                setIsJoiningDemo(true);
+                setError('');
+                const { error: joinError } = await joinDemoDaycare();
+                if (joinError) {
+                  setError(joinError);
+                }
+                setIsJoiningDemo(false);
+              }}
+              disabled={isJoiningDemo}
+              accessibilityLabel="Join demo daycare"
+              accessibilityRole="button"
+            >
+              {isJoiningDemo ? <ActivityIndicator color={Colors.primary} /> : (
+                <>
+                  <Ionicons name="school-outline" size={20} color={Colors.primary} />
+                  <Text style={styles.demoBtnText}>Join Demo Daycare (Pilot)</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.demoHint}>
+              Try the app with Sunshine Academy, a pre-configured demo daycare with sample children and classrooms.
+            </Text>
+          </>
+        )}
 
         <TouchableOpacity style={styles.signOutBtn} onPress={signOut}>
           <Text style={styles.signOutText}>Sign out and use a different account</Text>

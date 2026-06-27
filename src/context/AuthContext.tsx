@@ -265,6 +265,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       daycare_id: 'demo-daycare',
       push_token: null,
       coppa_consent_at: role === 'parent' ? new Date().toISOString() : null,
+      stripe_customer_id: null,
+      preferences: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
