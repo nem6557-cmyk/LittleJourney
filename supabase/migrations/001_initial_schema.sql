@@ -3,9 +3,13 @@
 -- Migration 001: Initial schema with all core tables
 -- ============================================================
 
--- Enable required extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- Enable required extensions.
+-- On Supabase these install into the `extensions` schema by default, but the
+-- rest of this migration calls uuid_generate_v4() unqualified, so we ensure the
+-- extensions schema is on the search_path for this session.
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA extensions;
+SET search_path TO public, extensions;
 
 -- ============================================================
 -- ENUMS

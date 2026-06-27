@@ -24,7 +24,7 @@ CREATE POLICY "Senders can update own messages"
 -- One row per consent action with the policy version + signed name, so consent
 -- is defensible and recorded per child (not just a single profile-level flag).
 CREATE TABLE IF NOT EXISTS coppa_consents (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   child_id UUID REFERENCES children(id) ON DELETE CASCADE,
   daycare_id UUID REFERENCES daycares(id) ON DELETE SET NULL,

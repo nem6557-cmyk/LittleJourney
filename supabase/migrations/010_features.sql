@@ -70,7 +70,7 @@ GRANT EXECUTE ON FUNCTION create_conversation(UUID[], conversation_type, TEXT) T
 
 -- ── 3. Announcements (admin broadcast) ──
 CREATE TABLE IF NOT EXISTS announcements (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   daycare_id UUID NOT NULL REFERENCES daycares(id) ON DELETE CASCADE,
   author_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
