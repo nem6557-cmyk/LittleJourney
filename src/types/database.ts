@@ -77,6 +77,25 @@ export interface Database {
         ];
       };
 
+      announcements: {
+        Row: {
+          id: string;
+          daycare_id: string;
+          author_id: string;
+          title: string;
+          body: string;
+          audience: string;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['announcements']['Row'], 'id' | 'created_at' | 'audience'> & {
+          id?: string;
+          created_at?: string;
+          audience?: string;
+        };
+        Update: Partial<Database['public']['Tables']['announcements']['Insert']>;
+        Relationships: [];
+      };
+
       profiles: {
         Row: {
           id: string;
