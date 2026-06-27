@@ -8,6 +8,8 @@ import { Colors, FontSizes, Shadows, Spacing, BorderRadius } from '../theme/colo
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
+import { childrenService } from '../services/children.service';
+import { consentsService } from '../services/consents.service';
 
 // Auth screens
 import { LoginScreen } from '../screens/auth/LoginScreen';
@@ -210,6 +212,25 @@ export const AppNavigator = () => {
   const waitingForProfile = isAuthenticated && !isDemoMode && !profile && !isLoading;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Load the parent's child name(s) so the consent text can name the child
+  // ("...for Layla") instead of a generic "your child".
+  const [consentChildName, setConsentChildName] = useState('');
+  const needsConsent = !!profile && (profile.role === 'parent' || profile.role === 'family') && !profile.coppa_consent_at && !isDemoMode;
+  useEffect(() => {
+    let cancelled = false;
+    if (needsConsent && profile) {
+      childrenService
+        .getParentChildren(profile.id)
+        .then((rows: Array<{ children?: { first_name?: string } | null }>) => {
+          if (cancelled || !rows?.length) return;
+          const names = rows.map((r) => r.children?.first_name).filter(Boolean) as string[];
+          setConsentChildName(names.join(' & '));
+        })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [needsConsent, profile]);
+
   useEffect(() => {
     if (waitingForProfile) {
       timerRef.current = setTimeout(() => setProfileTimeout(true), 10000);
@@ -268,13 +289,43 @@ export const AppNavigator = () => {
       return <InviteCodeScreen />;
     }
     if (profile && (profile.role === 'parent' || profile.role === 'family') && !profile.coppa_consent_at) {
+      const parentFullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
       return (
         <ConsentScreen
-          parentName={`${profile.first_name || ''} ${profile.last_name || ''}`.trim()}
-          childName=""
+          parentName={parentFullName}
+          childName={consentChildName}
           daycareName={daycare?.name || 'Your Daycare'}
           onConsent={async () => {
-            await updateProfile({ coppa_consent_at: new Date().toISOString() });
+            const now = new Date().toISOString();
+            // Record a per-child consent audit trail (policy version + signed
+            // name) in addition to the profile-level flag.
+            try {
+              const rows = await childrenService.getParentChildren(profile.id);
+              const childIds = (rows || [])
+                .map((r: { child_id?: string }) => r.child_id)
+                .filter(Boolean) as string[];
+              if (childIds.length > 0) {
+                await Promise.all(
+                  childIds.map((childId) =>
+                    consentsService.record({
+                      parentId: profile.id,
+                      daycareId: profile.daycare_id,
+                      childId,
+                      signedName: parentFullName,
+                    })
+                  )
+                );
+              } else {
+                await consentsService.record({
+                  parentId: profile.id,
+                  daycareId: profile.daycare_id,
+                  signedName: parentFullName,
+                });
+              }
+            } catch (err) {
+              console.warn('[Consent] Failed to record consent audit row:', err);
+            }
+            await updateProfile({ coppa_consent_at: now });
             await refreshProfile();
           }}
           onDecline={() => {

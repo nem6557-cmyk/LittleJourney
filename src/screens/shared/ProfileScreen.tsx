@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { File, Paths } from 'expo-file-system';
@@ -44,7 +44,7 @@ export const ProfileScreen = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [smartNotifs, setSmartNotifs] = useState(true);
-  const [biometric, setBiometric] = useState(true);
+  const [biometric, setBiometric] = useState(false);
   const [offlineMode, setOfflineMode] = useState(true);
   const [paymentCard, setPaymentCard] = useState<{ type: string; last4: string } | null>(null);
 
@@ -81,6 +81,7 @@ export const ProfileScreen = () => {
         if (saved) {
           const prefs = JSON.parse(saved);
           if (prefs.smartNotifs !== undefined) setSmartNotifs(prefs.smartNotifs);
+          if (prefs.biometricEnabled !== undefined) setBiometric(prefs.biometricEnabled);
           if (prefs.mealNotifs !== undefined) setMealNotifs(prefs.mealNotifs);
           if (prefs.napNotifs !== undefined) setNapNotifs(prefs.napNotifs);
           if (prefs.photoNotifs !== undefined) setPhotoNotifs(prefs.photoNotifs);
@@ -109,6 +110,7 @@ export const ProfileScreen = () => {
     if (!preferences || Object.keys(preferences).length === 0) return;
     prefsSeeded.current = true;
     if (typeof preferences.smartNotifs === 'boolean') setSmartNotifs(preferences.smartNotifs);
+    if (typeof preferences.biometricEnabled === 'boolean') setBiometric(preferences.biometricEnabled);
     if (typeof preferences.mealNotifs === 'boolean') setMealNotifs(preferences.mealNotifs);
     if (typeof preferences.napNotifs === 'boolean') setNapNotifs(preferences.napNotifs);
     if (typeof preferences.photoNotifs === 'boolean') setPhotoNotifs(preferences.photoNotifs);
@@ -133,7 +135,7 @@ export const ProfileScreen = () => {
   const savePreferences = useCallback(async () => {
     try {
       await AsyncStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify({
-        smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
+        smartNotifs, biometricEnabled: biometric, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
         photoSharing, classPhotos, analyticsSharing,
         selectedLanguage, autoTranslate, targetLanguage,
         autoPayEnabled, autoPayDay,
@@ -141,7 +143,7 @@ export const ProfileScreen = () => {
     } catch {
       // Best-effort persistence; a failed write is non-fatal.
     }
-  }, [smartNotifs, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
+  }, [smartNotifs, biometric, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
       photoSharing, classPhotos, analyticsSharing,
       selectedLanguage, autoTranslate, targetLanguage,
       autoPayEnabled, autoPayDay]);
@@ -174,11 +176,60 @@ export const ProfileScreen = () => {
   const [personRelation, setPersonRelation] = useState('');
   const [personPhone, setPersonPhone] = useState('');
 
+  // Persist biometric on/off to AppContext (profiles.preferences) + local state.
+  // The existing AsyncStorage effect caches `biometric` offline.
+  const setBiometricEnabled = useCallback(
+    (value: boolean) => {
+      setBiometric(value);
+      updatePreferences({ biometricEnabled: value });
+    },
+    [updatePreferences]
+  );
+
+  // Make the Biometric Login toggle real using expo-local-authentication.
+  // Native-only module: imported lazily inside the handler and guarded with
+  // Platform.OS so the web bundle never pulls it in.
+  const handleBiometricToggle = useCallback(async () => {
+    // Turning OFF never requires hardware — just persist.
+    if (biometric) {
+      setBiometricEnabled(false);
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      showAlert('Biometric Login', 'Biometric login is available in the mobile app.');
+      return;
+    }
+
+    try {
+      const LocalAuthentication = await import('expo-local-authentication');
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!hasHardware || !isEnrolled) {
+        showAlert(
+          'Biometrics Unavailable',
+          'This device has no biometrics set up. Enable Face ID, Touch ID, or fingerprint in your device settings first.'
+        );
+        return;
+      }
+
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Confirm to enable biometric login',
+      });
+      if (result.success) {
+        setBiometricEnabled(true);
+      }
+      // On failure/cancel, leave the toggle OFF.
+    } catch {
+      showAlert('Biometrics Unavailable', 'Could not access biometric authentication on this device.');
+    }
+  }, [biometric, setBiometricEnabled, showAlert]);
+
   const handleMenuTap = (label: string, sub?: SubScreen) => {
     if (sub) {
       setSubScreen(sub);
     } else if (label === 'Biometric Login') {
-      setBiometric(!biometric);
+      handleBiometricToggle();
     } else if (label === 'Offline Mode') {
       setOfflineMode(!offlineMode);
     } else {

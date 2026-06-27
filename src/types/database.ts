@@ -96,6 +96,26 @@ export interface Database {
         Relationships: [];
       };
 
+      coppa_consents: {
+        Row: {
+          id: string;
+          parent_id: string;
+          child_id: string | null;
+          daycare_id: string | null;
+          policy_version: string;
+          signed_name: string;
+          consented: boolean;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['coppa_consents']['Row'], 'id' | 'created_at' | 'consented'> & {
+          id?: string;
+          created_at?: string;
+          consented?: boolean;
+        };
+        Update: Partial<Database['public']['Tables']['coppa_consents']['Insert']>;
+        Relationships: [];
+      };
+
       profiles: {
         Row: {
           id: string;

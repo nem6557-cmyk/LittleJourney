@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Modal, TextInput, Image,
+  Modal, TextInput, Image, Platform, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -47,6 +47,11 @@ interface PhotoEntry {
   monthKey: string;
   type: string;
   photoUri: string;
+  // All photos that belong to the same source timeline entry, so the
+  // modal can page through siblings of a tapped photo.
+  entryPhotos: string[];
+  // Index of this photo within its source entry's photos[] array.
+  photoIndex: number;
 }
 
 export const GalleryScreen = () => {
@@ -75,6 +80,12 @@ export const GalleryScreen = () => {
   const [calendarSearch, setCalendarSearch] = useState('');
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(contextCalendarEvents);
   const [favoritePhotoIds, setFavoritePhotoIds] = useState<Set<string>>(new Set());
+  // Which photo within the selected entry's photos[] is currently shown in the modal.
+  const [modalPhotoIndex, setModalPhotoIndex] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  // Pager geometry for the multi-photo modal carousel.
+  const [pagerWidth, setPagerWidth] = useState(0);
+  const pagerRef = useRef<ScrollView>(null);
 
   // Sync learning plans from context when they change
   useEffect(() => {
@@ -112,21 +123,31 @@ export const GalleryScreen = () => {
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     const colors = ['#f093fb', '#4facfe', '#FFD93D', '#FF6B9D', '#6C63FF', '#FF9800', '#4CAF50', '#9B59B6', '#4ECDC4'];
-    return withPhotos.map((e, i) => {
+    // Flatten so EVERY photo in every entry's photos[] becomes its own tile.
+    const result: PhotoEntry[] = [];
+    let colorIndex = 0;
+    withPhotos.forEach((e) => {
       const d = new Date(e.timestamp);
-      return {
-        id: e.id,
-        label: e.title || e.description?.substring(0, 20) || 'Photo',
-        date: d.toDateString() === new Date().toDateString() ? 'Today' : formatDateShort(e.timestamp),
-        color: colors[i % colors.length],
-        timestamp: e.timestamp,
-        description: e.description,
-        createdByName: e.createdBy.name,
-        monthKey: `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`,
-        type: e.type,
-        photoUri: e.photos![0],
-      };
+      const entryPhotos = e.photos!;
+      entryPhotos.forEach((uri, photoIndex) => {
+        result.push({
+          id: `${e.id}-${photoIndex}`,
+          label: e.title || e.description?.substring(0, 20) || 'Photo',
+          date: d.toDateString() === new Date().toDateString() ? 'Today' : formatDateShort(e.timestamp),
+          color: colors[colorIndex % colors.length],
+          timestamp: e.timestamp,
+          description: e.description,
+          createdByName: e.createdBy.name,
+          monthKey: `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`,
+          type: e.type,
+          photoUri: uri,
+          entryPhotos,
+          photoIndex,
+        });
+        colorIndex += 1;
+      });
     });
+    return result;
   }, [timelineEntries, selectedChild.id]);
 
   // Filtered photos
@@ -170,6 +191,74 @@ export const GalleryScreen = () => {
   }, [filteredPhotos]);
 
   const selectedPhoto = selectedPhotoIndex !== null ? filteredPhotos[selectedPhotoIndex] : null;
+  // The list of photo URLs belonging to the tapped entry (for in-modal paging).
+  const modalPhotos = selectedPhoto?.entryPhotos ?? [];
+  const hasMultiplePhotos = modalPhotos.length > 1;
+  // The URI currently displayed in the modal (defaults to the tapped photo).
+  const currentModalUri = hasMultiplePhotos
+    ? modalPhotos[modalPhotoIndex] ?? selectedPhoto?.photoUri
+    : selectedPhoto?.photoUri;
+
+  // Open a tile: select it and seed the in-modal pager at the tapped photo's index.
+  const openPhoto = (globalIndex: number) => {
+    setSelectedPhotoIndex(globalIndex);
+    setModalPhotoIndex(filteredPhotos[globalIndex]?.photoIndex ?? 0);
+  };
+
+  // Once the pager has measured its width, scroll to the photo the user tapped.
+  useEffect(() => {
+    if (selectedPhotoIndex !== null && pagerWidth > 0) {
+      pagerRef.current?.scrollTo({ x: modalPhotoIndex * pagerWidth, animated: false });
+    }
+    // Seed the pager position when the modal opens / pager measures; intentionally
+    // not re-running on modalPhotoIndex changes (those are driven by user scroll).
+  }, [selectedPhotoIndex, pagerWidth]);
+
+  const closePhotoModal = () => {
+    setSelectedPhotoIndex(null);
+    setModalPhotoIndex(0);
+  };
+
+  // Save the currently displayed photo to the device's media library.
+  // expo-media-library is native-only, so it is imported lazily and guarded
+  // behind Platform.OS to avoid breaking the web build.
+  const handleSavePhoto = async () => {
+    const uri = currentModalUri;
+    if (!uri || isSaving) return;
+
+    if (Platform.OS === 'web') {
+      Alert.alert('Mobile only', 'Saving to your device is available in the mobile app.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const MediaLibrary = await import('expo-media-library');
+      const permission = await MediaLibrary.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Please allow photo library access to save this image.');
+        return;
+      }
+
+      let localUri = uri;
+      // Remote URLs must be downloaded to a local cache file before saving.
+      if (/^https?:\/\//i.test(uri)) {
+        // Legacy submodule keeps the simple downloadAsync/cacheDirectory API in SDK 54.
+        const FileSystem = await import('expo-file-system/legacy');
+        const fileName = `littlejourney-${Date.now()}.jpg`;
+        const target = `${FileSystem.cacheDirectory ?? ''}${fileName}`;
+        const { uri: downloadedUri } = await FileSystem.downloadAsync(uri, target);
+        localUri = downloadedUri;
+      }
+
+      await MediaLibrary.saveToLibraryAsync(localUri);
+      Alert.alert('Saved', 'Photo saved to your device.');
+    } catch {
+      Alert.alert('Save failed', 'We couldn\'t save this photo. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const toggleMilestone = async (id: string) => {
     const target = milestoneData.find((m) => m.id === id);
@@ -354,7 +443,7 @@ export const GalleryScreen = () => {
                           <TouchableOpacity
                             key={photo.id}
                             style={styles.galleryItem}
-                            onPress={() => setSelectedPhotoIndex(globalIndex)}
+                            onPress={() => openPhoto(globalIndex)}
                           >
                             <View>
                               <Image
@@ -661,12 +750,12 @@ export const GalleryScreen = () => {
       </ScrollView>
 
       {/* ── Photo detail modal ── */}
-      <Modal visible={selectedPhotoIndex !== null} animationType="fade" transparent>
+      <Modal visible={selectedPhotoIndex !== null} animationType="fade" transparent onRequestClose={closePhotoModal}>
         <View style={styles.photoModalOverlay}>
           <View style={[styles.photoModalContent, Shadows.large]}>
             {/* Navigation header */}
             <View style={styles.photoModalHeader}>
-              <TouchableOpacity onPress={() => setSelectedPhotoIndex(null)} style={styles.photoModalClose}>
+              <TouchableOpacity onPress={closePhotoModal} style={styles.photoModalClose}>
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
               <Text style={styles.photoModalCounter}>
@@ -675,13 +764,47 @@ export const GalleryScreen = () => {
               <View style={{ width: 24 }} />
             </View>
 
-            {/* Photo */}
+            {/* Photo — pages through siblings when the entry has multiple photos */}
             {selectedPhoto && (
-              <Image
-                source={{ uri: selectedPhoto.photoUri }}
-                style={styles.photoModalRealImage}
-                resizeMode="cover"
-              />
+              hasMultiplePhotos ? (
+                <View style={styles.photoModalPagerWrap} onLayout={(e) => setPagerWidth(e.nativeEvent.layout.width)}>
+                  <ScrollView
+                    ref={pagerRef}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.photoModalPager}
+                    onMomentumScrollEnd={(e) => {
+                      if (pagerWidth > 0) {
+                        setModalPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / pagerWidth));
+                      }
+                    }}
+                  >
+                    {modalPhotos.map((uri, i) => (
+                      <Image
+                        key={`${selectedPhoto.id}-modal-${i}`}
+                        source={{ uri }}
+                        style={[styles.photoModalPagerImage, { width: pagerWidth || undefined }]}
+                        resizeMode="cover"
+                      />
+                    ))}
+                  </ScrollView>
+                  <View style={styles.photoPagerDots}>
+                    {modalPhotos.map((_, i) => (
+                      <View
+                        key={`dot-${i}`}
+                        style={[styles.photoPagerDot, i === modalPhotoIndex && styles.photoPagerDotActive]}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <Image
+                  source={{ uri: selectedPhoto.photoUri }}
+                  style={styles.photoModalRealImage}
+                  resizeMode="cover"
+                />
+              )
             )}
 
             {/* Photo info */}
@@ -698,7 +821,7 @@ export const GalleryScreen = () => {
               <TouchableOpacity
                 style={[styles.photoNavBtn, selectedPhotoIndex === 0 && styles.photoNavBtnDisabled]}
                 disabled={selectedPhotoIndex === 0}
-                onPress={() => setSelectedPhotoIndex((prev) => prev !== null ? prev - 1 : null)}
+                onPress={() => { if (selectedPhotoIndex !== null && selectedPhotoIndex > 0) openPhoto(selectedPhotoIndex - 1); }}
               >
                 <Ionicons name="chevron-back" size={22} color={selectedPhotoIndex === 0 ? Colors.borderLight : Colors.primary} />
                 <Text style={[styles.photoNavText, selectedPhotoIndex === 0 && { color: Colors.borderLight }]}>Previous</Text>
@@ -706,7 +829,7 @@ export const GalleryScreen = () => {
               <TouchableOpacity
                 style={[styles.photoNavBtn, selectedPhotoIndex === filteredPhotos.length - 1 && styles.photoNavBtnDisabled]}
                 disabled={selectedPhotoIndex === filteredPhotos.length - 1}
-                onPress={() => setSelectedPhotoIndex((prev) => prev !== null ? prev + 1 : null)}
+                onPress={() => { if (selectedPhotoIndex !== null && selectedPhotoIndex < filteredPhotos.length - 1) openPhoto(selectedPhotoIndex + 1); }}
               >
                 <Text style={[styles.photoNavText, selectedPhotoIndex === filteredPhotos.length - 1 && { color: Colors.borderLight }]}>Next</Text>
                 <Ionicons name="chevron-forward" size={22} color={selectedPhotoIndex === filteredPhotos.length - 1 ? Colors.borderLight : Colors.primary} />
@@ -719,7 +842,7 @@ export const GalleryScreen = () => {
                 style={styles.photoModalBtn}
                 onPress={() => {
                   if (selectedPhoto) {
-                    shareContent(`Photo: ${selectedPhoto.label}\nFrom: ${selectedPhoto.createdByName}\n\n${selectedPhoto.photoUri}\n\nShared from Little Journey`);
+                    shareContent(`Photo: ${selectedPhoto.label}\nFrom: ${selectedPhoto.createdByName}\n\n${currentModalUri ?? selectedPhoto.photoUri}\n\nShared from Little Journey`);
                   }
                 }}
               >
@@ -728,10 +851,11 @@ export const GalleryScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.photoModalBtn}
-                onPress={() => shareContent(`Photo: ${selectedPhoto?.label}\n${selectedPhoto?.description || ''}\n\nShared from Little Journey`)}
+                onPress={handleSavePhoto}
+                disabled={isSaving}
               >
-                <Ionicons name="share-outline" size={22} color={Colors.secondary} />
-                <Text style={[styles.photoModalBtnText, { color: Colors.secondary }]}>Share</Text>
+                <Ionicons name={isSaving ? 'hourglass-outline' : 'download-outline'} size={22} color={Colors.secondary} />
+                <Text style={[styles.photoModalBtnText, { color: Colors.secondary }]}>{isSaving ? 'Saving…' : 'Save'}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.photoModalBtn}
@@ -875,6 +999,12 @@ const styles = StyleSheet.create({
   photoModalClose: { padding: 4 },
   photoModalCounter: { fontSize: FontSizes.sm, fontWeight: '600', color: Colors.textMuted },
   photoModalRealImage: { height: 260, marginHorizontal: Spacing.md, borderRadius: BorderRadius.lg, marginTop: Spacing.sm, backgroundColor: Colors.borderLight },
+  photoModalPagerWrap: { marginHorizontal: Spacing.md, marginTop: Spacing.sm, borderRadius: BorderRadius.lg, overflow: 'hidden' },
+  photoModalPager: { height: 260, backgroundColor: Colors.borderLight },
+  photoModalPagerImage: { height: 260, backgroundColor: Colors.borderLight },
+  photoPagerDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: Spacing.sm },
+  photoPagerDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.borderLight },
+  photoPagerDotActive: { backgroundColor: Colors.primary, width: 8, height: 8, borderRadius: 4 },
   photoModalInfo: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   photoModalDate: { fontSize: FontSizes.sm, fontWeight: '600', color: Colors.primary },
   photoModalDesc: { fontSize: FontSizes.md, color: Colors.textSecondary, marginTop: Spacing.xs, lineHeight: 20 },

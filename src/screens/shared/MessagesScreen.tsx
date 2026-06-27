@@ -20,7 +20,7 @@ export const MessagesScreen = () => {
     currentRole, currentUser, messages, conversations, sendMessage,
     markMessagesRead, activeConversationId, setActiveConversation,
     selectedChild, showAlert, isLoading,
-    createConversation, listContacts,
+    createConversation, listContacts, editMessage, deleteMessage,
   } = useApp();
   const { profile: authProfile } = useAuth();
   const [inputText, setInputText] = useState('');
@@ -29,6 +29,12 @@ export const MessagesScreen = () => {
   const [localSearch, setLocalSearch] = useState('');
   const [messageFilter, setMessageFilter] = useState<'all' | 'unread' | 'urgent'>('all');
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // ── In-thread search + edit/delete state ──
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  const [threadSearch, setThreadSearch] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   // ── Compose (new message) flow ──
   const [composeOpen, setComposeOpen] = useState(false);
@@ -115,6 +121,69 @@ export const MessagesScreen = () => {
     messages.filter((m) => m.conversationId === activeConversationId),
     [messages, activeConversationId]
   );
+
+  // In-thread text search (case-insensitive). Empty/closed shows all messages.
+  const visibleThreadMessages = useMemo(() => {
+    const q = threadSearch.trim().toLowerCase();
+    if (!threadSearchOpen || !q) return conversationMessages;
+    return conversationMessages.filter((m) =>
+      !m.deleted && m.text.toLowerCase().includes(q)
+    );
+  }, [conversationMessages, threadSearch, threadSearchOpen]);
+
+  const closeThreadSearch = () => {
+    setThreadSearchOpen(false);
+    setThreadSearch('');
+  };
+
+  // ── Edit / delete actions for own messages ──
+  const startEditMessage = (msg: Message) => {
+    setEditingMessageId(msg.id);
+    setEditingText(msg.text);
+  };
+
+  const cancelEditMessage = () => {
+    setEditingMessageId(null);
+    setEditingText('');
+  };
+
+  const confirmEditMessage = () => {
+    const trimmed = editingText.trim();
+    if (!editingMessageId || !trimmed) {
+      cancelEditMessage();
+      return;
+    }
+    editMessage(editingMessageId, trimmed);
+    cancelEditMessage();
+  };
+
+  const confirmDeleteMessage = (messageId: string) => {
+    Alert.alert(
+      'Delete Message',
+      'This message will be removed for everyone. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteMessage(messageId),
+        },
+      ]
+    );
+  };
+
+  const openMessageActions = (msg: Message) => {
+    if (msg.deleted) return;
+    // Photo messages can be deleted but not text-edited.
+    const isPhoto = msg.text.startsWith('[photo:');
+    const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
+    if (!isPhoto) {
+      buttons.push({ text: 'Edit', onPress: () => startEditMessage(msg) });
+    }
+    buttons.push({ text: 'Delete', style: 'destructive', onPress: () => confirmDeleteMessage(msg.id) });
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Message Options', undefined, buttons);
+  };
 
   const filteredConversations = useMemo(() => {
     let result = conversations;
@@ -446,7 +515,37 @@ export const MessagesScreen = () => {
           <Text style={styles.chatHeaderName} numberOfLines={1}>{partnerName}</Text>
           <Text style={styles.chatHeaderMeta}>{partnerSubtitle}</Text>
         </View>
+        <TouchableOpacity
+          style={styles.headerAction}
+          onPress={() => (threadSearchOpen ? closeThreadSearch() : setThreadSearchOpen(true))}
+          accessibilityLabel={threadSearchOpen ? 'Close search' : 'Search messages'}
+          accessibilityRole="button"
+        >
+          <Ionicons name={threadSearchOpen ? 'close' : 'search'} size={20} color={Colors.white} />
+        </TouchableOpacity>
       </LinearGradient>
+
+      {/* In-thread search bar */}
+      {threadSearchOpen && (
+        <View style={styles.threadSearchContainer}>
+          <View style={[styles.searchBar, Shadows.small]}>
+            <Ionicons name="search" size={18} color={Colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search in conversation..."
+              placeholderTextColor={Colors.textMuted}
+              value={threadSearch}
+              onChangeText={setThreadSearch}
+              autoFocus
+            />
+            {threadSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setThreadSearch('')}>
+                <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Messages */}
       <KeyboardAvoidingView
@@ -468,8 +567,17 @@ export const MessagesScreen = () => {
             <View style={styles.dateLine} />
           </View>
 
-          {conversationMessages.map((msg) => {
+          {threadSearchOpen && threadSearch.trim() && visibleThreadMessages.length === 0 && (
+            <View style={styles.threadSearchEmpty}>
+              <Ionicons name="search-outline" size={32} color={Colors.textMuted} />
+              <Text style={styles.threadSearchEmptyText}>No messages match “{threadSearch.trim()}”</Text>
+            </View>
+          )}
+
+          {visibleThreadMessages.map((msg) => {
             const own = isOwnMessage(msg);
+            const isEditing = editingMessageId === msg.id;
+            const isPhoto = msg.text.startsWith('[photo:');
             return (
               <View
                 key={msg.id}
@@ -482,39 +590,80 @@ export const MessagesScreen = () => {
                     </Text>
                   </View>
                 )}
-                <View style={[styles.messageBubble, own ? styles.ownBubble : styles.otherBubble, msg.isUrgent && styles.urgentBubble]}>
+                <TouchableOpacity
+                  activeOpacity={own && !msg.deleted ? 0.7 : 1}
+                  onLongPress={own && !msg.deleted ? () => openMessageActions(msg) : undefined}
+                  delayLongPress={300}
+                  accessibilityLabel={own && !msg.deleted ? 'Message options' : undefined}
+                  style={[styles.messageBubble, own ? styles.ownBubble : styles.otherBubble, msg.isUrgent && !msg.deleted && styles.urgentBubble, msg.deleted && styles.deletedBubble]}
+                >
                   {/* Show sender name in group conversations */}
-                  {!own && activeConv && activeConv.participants.length > 2 && (
+                  {!own && !msg.deleted && activeConv && activeConv.participants.length > 2 && (
                     <Text style={styles.senderLabel}>{msg.senderName}</Text>
                   )}
-                  {msg.isUrgent && (
-                    <View style={styles.urgentBadge}>
-                      <Ionicons name="warning" size={12} color={Colors.danger} />
-                      <Text style={styles.urgentText}>Urgent</Text>
+                  {msg.deleted ? (
+                    <View style={styles.deletedRow}>
+                      <Ionicons name="ban-outline" size={14} color={Colors.textMuted} />
+                      <Text style={styles.deletedText}>This message was deleted</Text>
+                    </View>
+                  ) : isEditing ? (
+                    <View style={styles.editContainer}>
+                      <TextInput
+                        style={[styles.editInput, own && styles.ownMessageText]}
+                        value={editingText}
+                        onChangeText={setEditingText}
+                        multiline
+                        autoFocus
+                        maxLength={1000}
+                        placeholder="Edit message..."
+                        placeholderTextColor={own ? 'rgba(255,255,255,0.6)' : Colors.textMuted}
+                      />
+                      <View style={styles.editActions}>
+                        <TouchableOpacity onPress={cancelEditMessage} style={styles.editBtn} accessibilityRole="button" accessibilityLabel="Cancel edit">
+                          <Text style={[styles.editBtnText, own && styles.ownMessageText]}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={confirmEditMessage} style={styles.editBtn} disabled={!editingText.trim()} accessibilityRole="button" accessibilityLabel="Save edit">
+                          <Text style={[styles.editBtnText, styles.editBtnSave, own && styles.ownMessageText]}>Save</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <>
+                      {msg.isUrgent && (
+                        <View style={styles.urgentBadge}>
+                          <Ionicons name="warning" size={12} color={Colors.danger} />
+                          <Text style={styles.urgentText}>Urgent</Text>
+                        </View>
+                      )}
+                      {isPhoto ? (
+                        <Image
+                          source={{ uri: msg.text.slice(7, -1) }}
+                          style={{ width: 200, height: 150, borderRadius: BorderRadius.md, marginTop: 4 }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Text style={[styles.messageText, own && styles.ownMessageText]}>{msg.text}</Text>
+                      )}
+                    </>
+                  )}
+                  {!msg.deleted && !isEditing && (
+                    <View style={styles.messageFooter}>
+                      {msg.edited && (
+                        <Text style={[styles.editedLabel, own && styles.ownMessageTime]}>(edited)</Text>
+                      )}
+                      <Text style={[styles.messageTime, own && styles.ownMessageTime]}>
+                        {formatTime(msg.timestamp)}
+                      </Text>
+                      {own && (
+                        <Ionicons
+                          name={msg.read ? 'checkmark-done' : 'checkmark'}
+                          size={14}
+                          color={own ? 'rgba(255,255,255,0.7)' : Colors.textMuted}
+                        />
+                      )}
                     </View>
                   )}
-                  {msg.text.startsWith('[photo:') ? (
-                    <Image
-                      source={{ uri: msg.text.slice(7, -1) }}
-                      style={{ width: 200, height: 150, borderRadius: BorderRadius.md, marginTop: 4 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <Text style={[styles.messageText, own && styles.ownMessageText]}>{msg.text}</Text>
-                  )}
-                  <View style={styles.messageFooter}>
-                    <Text style={[styles.messageTime, own && styles.ownMessageTime]}>
-                      {formatTime(msg.timestamp)}
-                    </Text>
-                    {own && (
-                      <Ionicons
-                        name={msg.read ? 'checkmark-done' : 'checkmark'}
-                        size={14}
-                        color={own ? 'rgba(255,255,255,0.7)' : Colors.textMuted}
-                      />
-                    )}
-                  </View>
-                </View>
+                </TouchableOpacity>
               </View>
             );
           })}
@@ -718,6 +867,23 @@ const styles = StyleSheet.create({
   messageFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: Spacing.xs },
   messageTime: { fontSize: FontSizes.xs, color: Colors.textMuted },
   ownMessageTime: { color: 'rgba(255,255,255,0.7)' },
+  editedLabel: { fontSize: FontSizes.xs, color: Colors.textMuted, fontStyle: 'italic', marginRight: 2 },
+
+  // In-thread search
+  threadSearchContainer: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, backgroundColor: Colors.background },
+  threadSearchEmpty: { alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.sm },
+  threadSearchEmptyText: { fontSize: FontSizes.sm, color: Colors.textMuted },
+
+  // Deleted (tombstone) + inline edit
+  deletedBubble: { backgroundColor: Colors.borderLight, borderWidth: 0 },
+  deletedRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  deletedText: { fontSize: FontSizes.md, color: Colors.textMuted, fontStyle: 'italic' },
+  editContainer: { minWidth: 180 },
+  editInput: { fontSize: FontSizes.md, color: Colors.textPrimary, lineHeight: 22, minWidth: 160, padding: 0 },
+  editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.md, marginTop: Spacing.sm },
+  editBtn: { paddingVertical: 2 },
+  editBtnText: { fontSize: FontSizes.sm, fontWeight: '600', color: Colors.textMuted },
+  editBtnSave: { color: Colors.primary },
 
   // Input
   inputContainer: { backgroundColor: Colors.card, padding: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.borderLight },
