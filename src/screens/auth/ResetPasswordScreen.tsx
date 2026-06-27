@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -12,14 +12,29 @@ interface ResetPasswordScreenProps {
   onComplete: () => void;
 }
 
+// Must match the signup policy: 8+ chars, an uppercase letter, and a number.
+const passwordMeetsPolicy = (pw: string) => pw.length >= 8 && /[A-Z]/.test(pw) && /[0-9]/.test(pw);
+
 export const ResetPasswordScreen = ({ onComplete }: ResetPasswordScreenProps) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [sessionValid, setSessionValid] = useState<boolean | null>(null);
 
-  const isValid = newPassword.length >= 8 && newPassword === confirmPassword;
+  // A valid recovery session must exist (set by the deep-link handler). If the
+  // link is expired/invalid, show a clear "link expired" state instead of a
+  // cryptic error after the user types a new password.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) setSessionValid(!!data.session);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const isValid = passwordMeetsPolicy(newPassword) && newPassword === confirmPassword;
 
   const handleSubmit = async () => {
     if (!isValid) return;
@@ -53,6 +68,35 @@ export const ResetPasswordScreen = ({ onComplete }: ResetPasswordScreenProps) =>
     );
   }
 
+  // Expired / invalid recovery link.
+  if (sessionValid === false) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.successContainer}>
+          <Ionicons name="alert-circle" size={64} color={Colors.danger} />
+          <Text style={styles.successTitle}>Reset Link Expired</Text>
+          <Text style={styles.successSubtext}>
+            This password reset link is no longer valid. Please request a new one from the login screen.
+          </Text>
+          <TouchableOpacity style={[styles.button, { marginTop: Spacing.xl, alignSelf: 'stretch' }]} onPress={onComplete}>
+            <Text style={styles.buttonText}>Back to Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Still checking the session.
+  if (sessionValid === null) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.successContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -78,7 +122,7 @@ export const ResetPasswordScreen = ({ onComplete }: ResetPasswordScreenProps) =>
             secureTextEntry
             value={newPassword}
             onChangeText={setNewPassword}
-            placeholder="At least 8 characters"
+            placeholder="8+ chars, an uppercase letter & a number"
             placeholderTextColor={Colors.textMuted}
             autoFocus
           />
@@ -97,8 +141,8 @@ export const ResetPasswordScreen = ({ onComplete }: ResetPasswordScreenProps) =>
           />
         </View>
 
-        {newPassword.length > 0 && newPassword.length < 8 && (
-          <Text style={styles.hint}>Password must be at least 8 characters</Text>
+        {newPassword.length > 0 && !passwordMeetsPolicy(newPassword) && (
+          <Text style={styles.hint}>Must be 8+ characters with an uppercase letter and a number.</Text>
         )}
         {confirmPassword.length > 0 && newPassword !== confirmPassword && (
           <Text style={styles.hint}>Passwords do not match</Text>
