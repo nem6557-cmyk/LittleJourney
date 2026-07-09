@@ -36,7 +36,7 @@ A modern daycare management app that keeps parents connected to their child's da
 | State | React Context + React Query |
 | Navigation | React Navigation (Bottom Tabs + Stack) |
 | Validation | Zod 4 |
-| Testing | Jest + ts-jest (100 unit tests) |
+| Testing | Jest + ts-jest + Playwright e2e |
 | Linting | ESLint + Prettier |
 
 ## Project Structure
@@ -70,8 +70,9 @@ supabase/
 
 ### Prerequisites
 
-- Node.js 18+
-- Expo CLI (`npm install -g expo-cli`)
+- Node.js 20.x (`package.json` requires `>=20 <21`)
+- Expo CLI via `npx expo`
+- EAS CLI via `npx eas-cli` for production mobile builds
 - A Supabase project (free tier works)
 - A Stripe account (test mode for development)
 
@@ -128,6 +129,12 @@ npm run format
 
 # Type check
 npm run type-check
+
+# Full local preflight
+npm run verify
+
+# Release preflight, including web build and Playwright e2e
+npm run verify:release
 ```
 
 ## Database Setup
@@ -135,8 +142,12 @@ npm run type-check
 Apply the Supabase migrations in order:
 
 ```bash
-# Using Supabase CLI
-supabase db push
+# Using Supabase CLI after logging in and linking the production project
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+npm run supabase:prod:check
+npm run supabase:prod:push:dry-run
+npm run supabase:prod:push
 ```
 
 Or manually run the SQL files in `supabase/migrations/` through the Supabase SQL Editor.
@@ -146,14 +157,15 @@ Or manually run the SQL files in `supabase/migrations/` through the Supabase SQL
 ### Mobile (EAS Build)
 
 ```bash
-# Configure EAS
-eas build:configure
+# Log in and confirm the selected Expo account
+npx eas-cli login
+npx eas-cli whoami
 
 # Build for iOS
-eas build --platform ios
+npx eas-cli build --platform ios --profile production
 
 # Build for Android
-eas build --platform android
+npx eas-cli build --platform android --profile production
 ```
 
 ### Web
@@ -168,7 +180,7 @@ npx expo export --platform web
 - **Offline-First**: Mutations are queued locally and synced when connectivity returns, with exponential backoff retry
 - **Real-Time**: Supabase Realtime subscriptions for live timeline updates and messaging
 - **Row-Level Security**: All database tables have RLS policies enforcing role-based access
-- **COPPA Compliant**: Parental consent flow required before accessing child data
+- **COPPA/FERPA-aware controls**: Parental consent flow, daycare-scoped access policies, legal screens, and data deletion workflows are in place; operator/legal signoff is still required before production launch
 - **Error Boundaries**: Root-level ErrorBoundary catches and displays crashes gracefully
 - **Deep Linking**: `littlejourney://` and `https://littlejourney.app` URL schemes configured
 

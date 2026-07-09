@@ -33,7 +33,6 @@ export const TimelineCard: React.FC<Props> = ({ entry, isFirst, isLast }) => {
   const [showDetail, setShowDetail] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showReactions, setShowReactions] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
 
   const color = activityColors[entry.type] || Colors.primary;
   const icon = activityIcons[entry.type] || 'ellipse-outline';

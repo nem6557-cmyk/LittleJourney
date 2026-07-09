@@ -26,7 +26,7 @@ export const TermsOfServiceScreen: React.FC<TermsOfServiceScreenProps> = ({ onCl
       )}
 
       <Text style={styles.title}>Terms of Service</Text>
-      <Text style={styles.updated}>Last updated: February 2026</Text>
+      <Text style={styles.updated}>Last updated: July 2026</Text>
 
       <Text style={styles.sectionTitle}>1. Acceptance of Terms</Text>
       <Text style={styles.body}>
@@ -65,7 +65,7 @@ export const TermsOfServiceScreen: React.FC<TermsOfServiceScreenProps> = ({ onCl
 
       <Text style={styles.sectionTitle}>8. Termination</Text>
       <Text style={styles.body}>
-        Either party may terminate the service at any time. Upon termination, you may export your data within 30 days. After 30 days, data will be permanently deleted in accordance with our Privacy Policy.
+        Either party may terminate the service at any time. Upon termination, you may request export or deletion of account-level data. Certain daycare records, payment records, safety records, backup data, or legal records may be retained as described in our Privacy Policy or as required by the daycare operator's obligations.
       </Text>
 
       <Text style={styles.sectionTitle}>9. Contact</Text>

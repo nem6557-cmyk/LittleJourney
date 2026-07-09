@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
+import { Colors, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { forgotPasswordSchema } from '../../lib/validators';
 

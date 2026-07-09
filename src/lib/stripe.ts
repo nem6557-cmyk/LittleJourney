@@ -18,7 +18,7 @@ import { config } from './config';
 
 export const stripeConfig = {
   publishableKey: config.stripePublishableKey,
-  merchantIdentifier: 'merchant.com.littlejourney',
+  merchantIdentifier: 'merchant.com.littlejourney.app',
   urlScheme: 'littlejourney',
 };
 

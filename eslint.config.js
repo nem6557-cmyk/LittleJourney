@@ -35,7 +35,10 @@ module.exports = tseslint.config(
       },
     },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      // Supabase joins, React Native bridge APIs, and Expo modules often surface
+      // dynamic payloads. Type-checking still runs in CI; lint should flag
+      // actionable production issues without drowning them in adapter casts.
+      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },

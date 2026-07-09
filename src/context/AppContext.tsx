@@ -3,7 +3,7 @@ import { Alert, Share, Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   UserRole, User, TimelineEntry, Message, Child, MoodType, Conversation,
-  Notification, IncidentReport, AttendanceRecord, Invoice, Comment, Reaction,
+  Notification, IncidentReport, AttendanceRecord, Invoice, Comment,
   LearningPlan, Milestone, CalendarEvent, AuthorizedPerson,
 } from '../types';
 import {
@@ -16,8 +16,6 @@ import { timelineService } from '../services/timeline.service';
 import { messagesService } from '../services/messages.service';
 import { childrenService } from '../services/children.service';
 import { incidentsService } from '../services/incidents.service';
-import { milestonesService } from '../services/milestones.service';
-import { calendarService } from '../services/calendar.service';
 import { attendanceService } from '../services/attendance.service';
 import { notificationsService } from '../services/notifications.service';
 import { authorizedPickupsService } from '../services/authorized-pickups.service';
@@ -161,11 +159,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [learningPlans, setLearningPlans] = useState<LearningPlan[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [fetchedChildren, setFetchedChildren] = useState<Child[]>([]);
   const pushRegistered = useRef(false);
   const conversationIdsRef = useRef<string[]>([]);
-  const [supabaseDataLoaded, setSupabaseDataLoaded] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
 
   // Sync role from AuthContext when profile is available
@@ -195,14 +191,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!auth.profile) {
       // Not logged in — no data to fetch
-      setSupabaseDataLoaded(false);
       return;
     }
 
     const profileRole = (auth.profile.role || 'parent') as UserRole;
     const needsParentalConsent = profileRole === 'parent' || profileRole === 'family';
     if (!auth.isDemoMode && needsParentalConsent && !auth.profile.coppa_consent_at) {
-      setSupabaseDataLoaded(false);
       setDataLoading(false);
       setDataError(null);
       return;
@@ -282,7 +276,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         if (mappedChildren.length > 0) {
           setFetchedChildren(mappedChildren);
-          setSupabaseDataLoaded(true);
           // Select the first child if current selection is invalid
           if (!mappedChildren.find((c) => c.id === selectedChildId)) {
             setSelectedChildId(mappedChildren[0].id);
@@ -813,7 +806,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!auth.isAuthenticated) {
       // Reset all state to empty
       setFetchedChildren([]);
-      setSupabaseDataLoaded(false);
       setTimelineEntries([]);
       setMessages([]);
       setConversations([]);

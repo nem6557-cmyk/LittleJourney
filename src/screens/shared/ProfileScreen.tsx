@@ -48,7 +48,7 @@ export const ProfileScreen = () => {
   const [smartNotifs, setSmartNotifs] = useState(true);
   const [biometric, setBiometric] = useState(false);
   const [offlineMode, setOfflineMode] = useState(true);
-  const [paymentCard, setPaymentCard] = useState<{ type: string; last4: string } | null>(null);
+  const [paymentCard] = useState<{ type: string; last4: string } | null>(null);
 
   // Track screen view on mount (#34)
   useEffect(() => {

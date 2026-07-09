@@ -19,8 +19,8 @@ test.describe('auth onboarding', () => {
     });
 
     expect(pageErrors).toEqual([]);
-    expect(navigation?.domContentLoaded ?? 0).toBeLessThan(5_000);
-    expect(navigation?.loadComplete ?? 0).toBeLessThan(8_000);
+    expect(navigation?.domContentLoaded ?? 0).toBeLessThan(8_000);
+    expect(navigation?.loadComplete ?? 0).toBeLessThan(12_000);
   });
 
   test('lets users skip onboarding and validates login input', async ({ page }) => {

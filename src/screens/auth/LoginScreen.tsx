@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, Dimensions, KeyboardAvoidingView, Platform,
+  ScrollView, Animated, KeyboardAvoidingView, Platform,
   Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { loginSchema } from '../../lib/validators';
-
-const { width } = Dimensions.get('window');
 
 interface LoginScreenProps {
   navigation?: any;
@@ -76,7 +74,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onNavigate
         Alert.alert('Sign In Failed', error.message);
       }
       // Success: AuthContext handles session, AppNavigator redirects automatically
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);

@@ -73,7 +73,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNaviga
           );
         }
       }
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);

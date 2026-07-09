@@ -17,15 +17,19 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: `npm run build:web && npx serve -s dist -l ${PORT}`,
+    command: `npm run build:web && node scripts/serve-static.mjs dist ${PORT}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [
     {
-      name: 'chromium',
+      name: 'desktop-chromium',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'mobile-chromium',
+      use: { ...devices['Pixel 5'] },
     },
   ],
 });

@@ -1,6 +1,5 @@
 import { supabase } from '../lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
-import { Platform } from 'react-native';
 
 const BUCKETS = {
   avatars: 'avatars',

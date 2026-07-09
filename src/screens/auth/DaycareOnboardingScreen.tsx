@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { daycareOnboardingSchema, classroomSchema } from '../../lib/validators';
+import { daycareOnboardingSchema } from '../../lib/validators';
 
 export const DaycareOnboardingScreen: React.FC = () => {
   const { createDaycare, joinDemoDaycare, refreshProfile, signOut } = useAuth();

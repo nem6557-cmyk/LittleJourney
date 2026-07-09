@@ -17,7 +17,7 @@ import { Message, Conversation } from '../../types';
 
 export const MessagesScreen = () => {
   const {
-    currentRole, currentUser, messages, conversations, sendMessage,
+    currentUser, messages, conversations, sendMessage,
     markMessagesRead, activeConversationId, setActiveConversation,
     selectedChild, showAlert, isLoading,
     createConversation, listContacts, editMessage, deleteMessage,

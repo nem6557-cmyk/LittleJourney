@@ -24,9 +24,9 @@ export const config = {
   privacyEmail: 'privacy@littlejourney.app',
   legalEmail: 'legal@littlejourney.app',
   // Absolute https URLs so they can open on native (a relative path has no origin).
-  privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || 'https://littlejourney.app/privacy',
-  termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://littlejourney.app/terms',
-  supportUrl: 'https://littlejourney.app/support',
+  privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || 'https://littlejourney.app/privacy.html',
+  termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://littlejourney.app/terms.html',
+  supportUrl: 'https://littlejourney.app/support.html',
 
   // Feature flags
   enableOfflineMode: true,

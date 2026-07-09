@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:web": "expo export --platform web --output-dir dist",
-    "serve:web": "serve -s dist -l tcp://0.0.0.0:${PORT:-3000}",
+    "serve:web": "node scripts/serve-static.mjs dist",
     "replit": "npm run build:web && npm run serve:web",
     "lint": "eslint src/ --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
@@ -17,7 +17,12 @@
     "test:watch": "jest --watch",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "verify": "npm run type-check && npm run lint && npm test -- --runInBand",
+    "verify:release": "npm run type-check && npm run lint && npm test -- --runInBand && npm run build:web && npm run test:e2e",
+    "supabase:prod:check": "npx supabase migration list --linked && npx supabase db lint --linked --fail-on error && npx supabase db advisors --linked --type security --fail-on error && npx supabase db advisors --linked --type performance --level warn --fail-on error",
+    "supabase:prod:push:dry-run": "npx supabase db push --linked --dry-run",
+    "supabase:prod:push": "npx supabase db push --linked"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

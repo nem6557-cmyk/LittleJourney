@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  RefreshControl, TextInput, Modal, Alert, ActivityIndicator,
+  RefreshControl, TextInput, Modal, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -46,7 +46,6 @@ export const TimelineScreen = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifDisplayCount, setNotifDisplayCount] = useState(8);
   const [showAllNotifications, setShowAllNotifications] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const { profile: authProfile } = useAuth();
 
   // Track screen view on mount (#34)
@@ -159,27 +158,22 @@ export const TimelineScreen = () => {
             quality: 0.8,
           });
           if (!result.canceled && result.assets.length > 0) {
-            setIsUploading(true);
-            try {
-              const localUris = result.assets.map((a) => a.uri);
-              const { urls: photoUrls, failed } = await uploadPhotos(localUris);
-              if (photoUrls.length === 0) {
-                showAlert('Upload Failed', 'The photo could not be uploaded. Please check your connection and try again.');
-                return;
-              }
-              if (failed > 0) {
-                showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
-              }
-              addTimelineEntry({
-                childId: selectedChild.id,
-                type: 'photo',
-                title: `Photo of ${selectedChild.firstName}`,
-                description: `Captured by ${currentUser.name}`,
-                photos: photoUrls,
-              });
-            } finally {
-              setIsUploading(false);
+            const localUris = result.assets.map((a) => a.uri);
+            const { urls: photoUrls, failed } = await uploadPhotos(localUris);
+            if (photoUrls.length === 0) {
+              showAlert('Upload Failed', 'The photo could not be uploaded. Please check your connection and try again.');
+              return;
             }
+            if (failed > 0) {
+              showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
+            }
+            addTimelineEntry({
+              childId: selectedChild.id,
+              type: 'photo',
+              title: `Photo of ${selectedChild.firstName}`,
+              description: `Captured by ${currentUser.name}`,
+              photos: photoUrls,
+            });
           }
         },
       },
@@ -197,27 +191,22 @@ export const TimelineScreen = () => {
             allowsMultipleSelection: true,
           });
           if (!result.canceled && result.assets.length > 0) {
-            setIsUploading(true);
-            try {
-              const localUris = result.assets.map((a) => a.uri);
-              const { urls: photoUrls, failed } = await uploadPhotos(localUris);
-              if (photoUrls.length === 0) {
-                showAlert('Upload Failed', 'The photos could not be uploaded. Please check your connection and try again.');
-                return;
-              }
-              if (failed > 0) {
-                showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
-              }
-              addTimelineEntry({
-                childId: selectedChild.id,
-                type: 'photo',
-                title: `${photoUrls.length} Photo${photoUrls.length > 1 ? 's' : ''} of ${selectedChild.firstName}`,
-                description: `Added by ${currentUser.name}`,
-                photos: photoUrls,
-              });
-            } finally {
-              setIsUploading(false);
+            const localUris = result.assets.map((a) => a.uri);
+            const { urls: photoUrls, failed } = await uploadPhotos(localUris);
+            if (photoUrls.length === 0) {
+              showAlert('Upload Failed', 'The photos could not be uploaded. Please check your connection and try again.');
+              return;
             }
+            if (failed > 0) {
+              showAlert('Some Photos Failed', `${failed} photo${failed > 1 ? 's' : ''} could not be uploaded and ${failed > 1 ? 'were' : 'was'} skipped.`);
+            }
+            addTimelineEntry({
+              childId: selectedChild.id,
+              type: 'photo',
+              title: `${photoUrls.length} Photo${photoUrls.length > 1 ? 's' : ''} of ${selectedChild.firstName}`,
+              description: `Added by ${currentUser.name}`,
+              photos: photoUrls,
+            });
           }
         },
       },

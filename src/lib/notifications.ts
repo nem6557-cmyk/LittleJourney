@@ -3,7 +3,6 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
-import { config } from './config';
 
 /**
  * Configure notification handler behavior.

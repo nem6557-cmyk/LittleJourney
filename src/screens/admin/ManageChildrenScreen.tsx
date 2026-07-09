@@ -13,7 +13,7 @@ import { EmptyState } from '../../components/EmptyState';
 type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void };
 
 export const ManageChildrenScreen = ({ navigation }: { navigation?: AdminNavigation }) => {
-  const { children, selectedChild, selectChild, refreshData, updateChildInfo, removeChild } = useApp();
+  const { children, selectChild, refreshData, updateChildInfo, removeChild } = useApp();
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);

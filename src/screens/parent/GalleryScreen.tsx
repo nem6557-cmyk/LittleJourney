@@ -9,7 +9,6 @@ import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/c
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
 import { GallerySkeleton } from '../../components/LoadingSkeleton';
-import { EmptyState } from '../../components/EmptyState';
 import { Milestone, LearningPlan, CalendarEvent } from '../../types';
 import { milestonesService } from '../../services/milestones.service';
 import { supabase } from '../../lib/supabase';

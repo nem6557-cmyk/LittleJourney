@@ -27,11 +27,11 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ onClos
       )}
 
       <Text style={styles.title}>Privacy Policy</Text>
-      <Text style={styles.updated}>Last updated: February 2026</Text>
+      <Text style={styles.updated}>Last updated: July 2026</Text>
 
       <Text style={styles.sectionTitle}>1. Information We Collect</Text>
       <Text style={styles.body}>
-        LittleJourney collects information necessary to provide childcare communication services. This includes account information (name, email, role), child information entered by parents and caregivers (name, date of birth, allergies, medical notes), activity data (meals, naps, milestones), photos, and messages.
+        LittleJourney collects information necessary to provide childcare communication services. This includes account information (name, email, role), child information entered by parents, guardians, administrators, or caregivers (name, date of birth, classroom, allergies, medical notes, emergency contacts, authorized pickups), activity data (meals, naps, attendance, incidents, milestones), photos, messages, push notification tokens, and app diagnostics.
       </Text>
 
       <Text style={styles.sectionTitle}>2. Children's Privacy</Text>
@@ -56,12 +56,12 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ onClos
 
       <Text style={styles.sectionTitle}>6. Data Sharing</Text>
       <Text style={styles.body}>
-        We do not sell or share personal information with third parties for marketing purposes. Data is shared only with: your daycare center (as authorized), payment processors (Stripe) for transaction processing, and cloud infrastructure providers necessary to operate the service.
+        We do not sell personal information or share it for third-party advertising. Data is shared only with service providers needed to operate LittleJourney, including Supabase for authentication/database/storage, Stripe for payment processing, Sentry for crash reporting and diagnostics, Expo for push notification delivery, cloud infrastructure providers, and the daycare or family accounts authorized to access the record.
       </Text>
 
       <Text style={styles.sectionTitle}>7. Data Retention & Deletion</Text>
       <Text style={styles.body}>
-        Account data is retained while your account is active. You can request complete data export or deletion at any time through Profile {'>'} Privacy {'>'} Data Management. Upon deletion request, all personal data is permanently removed within 30 days.
+        Account data is retained while your account is active. You can request export or deletion through Profile {'>'} Privacy {'>'} Data Management. Account-level data is deleted within the published support timeline after a verified request. Daycare records, child activity logs, incident records, attendance records, invoices, and photos may also be controlled by the daycare operator and may be retained where required for childcare operations, legal obligations, dispute resolution, payment records, backup integrity, or safety documentation.
       </Text>
 
       <Text style={styles.sectionTitle}>8. Your Rights</Text>

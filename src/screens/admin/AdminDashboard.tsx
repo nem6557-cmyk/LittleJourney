@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
 } from 'react-native';
@@ -11,9 +11,8 @@ import { useAuth } from '../../context/AuthContext';
 type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void };
 
 export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation }) => {
-  const { children, attendance, timelineEntries, currentUser } = useApp();
+  const { children, attendance, timelineEntries } = useApp();
   const { profile, daycare } = useAuth();
-  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
 
   const daycareName = daycare?.name || (profile?.daycare_id ? 'Your Daycare' : 'Little Journey');
   const presentToday = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;

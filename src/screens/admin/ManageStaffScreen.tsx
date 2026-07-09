@@ -29,7 +29,6 @@ export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'caregiver' | 'admin'>('caregiver');
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [isInviting, setIsInviting] = useState(false);
 
   const fetchStaff = useCallback(async () => {
@@ -39,7 +38,6 @@ export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation
       if (currentUser) {
         setStaffMembers([{ id: currentUser.id, name: currentUser.name, email: currentUser.email, role: 'Admin', classroom: 'All' }]);
       }
-      setIsLoadingStaff(false);
       return;
     }
 
@@ -66,8 +64,6 @@ export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation
       if (currentUser) {
         setStaffMembers([{ id: currentUser.id, name: currentUser.name, email: currentUser.email, role: 'Admin', classroom: 'All' }]);
       }
-    } finally {
-      setIsLoadingStaff(false);
     }
   }, [profile, currentUser]);
 

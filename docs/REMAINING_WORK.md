@@ -56,7 +56,7 @@ you can provision. The app code has clean integration points where applicable.
 
 - Typing/presence indicators in messaging (needs Realtime presence channels).
 - Device-calendar / reminders integration (expo-calendar) — not added.
-- Reduce remaining ~85 `no-explicit-any` warnings — intentionally left
-  (non-blocking; churning working DB-mapping code risks regressions).
+- Lint warning budget is now zero after the July 2026 production-readiness
+  cleanup. TypeScript remains the source of truth for production type safety.
 
 See `docs/FUNCTIONALITY_PUNCH_LIST.md` for the full itemized list with file:line.

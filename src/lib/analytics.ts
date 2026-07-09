@@ -14,7 +14,7 @@ type EventProperties = Record<string, string | number | boolean | undefined>;
  */
 export function trackEvent(name: string, properties?: EventProperties): void {
   if (config.environment === 'development') {
-    console.log(`[Analytics] ${name}`, properties || '');
+    console.warn(`[Analytics] ${name}`, properties || '');
     return;
   }
 

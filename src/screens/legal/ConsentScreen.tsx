@@ -16,7 +16,7 @@ interface ConsentScreenProps {
 
 /**
  * COPPA Parental Consent Screen.
- * Required before any child data can be collected.
+ * Required before child data is shown to parent or family accounts.
  * Must be completed by verified parent/guardian.
  */
 export const ConsentScreen: React.FC<ConsentScreenProps> = ({
@@ -60,7 +60,7 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({
 
       <Text style={styles.title}>Parental Consent Required</Text>
       <Text style={styles.subtitle}>
-        COPPA (Children's Online Privacy Protection Act) Compliance
+        COPPA (Children's Online Privacy Protection Act) Notice
       </Text>
 
       <View style={styles.infoCard}>

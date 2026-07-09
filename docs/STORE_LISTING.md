@@ -42,7 +42,7 @@ PRIVACY & SECURITY:
 - Row-level security helps isolate records between organizations
 - Encrypted authentication and data transfer
 - No data sold to third parties — ever
-- Parents can export or delete their data at any time
+- Parents can request export or deletion of account-level data at any time
 
 Built with love for the families and caregivers who shape our children's earliest years.
 
@@ -59,13 +59,13 @@ Lifestyle
 4+ (No objectionable content)
 
 ### Support URL
-https://littlejourney.app/support
+https://littlejourney.app/support.html
 
 ### Marketing URL
 https://littlejourney.app
 
 ### Privacy Policy URL
-https://littlejourney.app/privacy
+https://littlejourney.app/privacy.html
 
 ---
 
@@ -111,7 +111,7 @@ PRIVACY AND SECURITY
 - Row-level security helps isolate records between organizations
 - Encrypted authentication and data transfer
 - No data sold to third parties
-- Parents can export or delete their data at any time
+- Parents can request export or deletion of account-level data at any time
 
 ### Category
 Education
@@ -144,11 +144,11 @@ This app is a childcare communication platform connecting daycare centers with p
 
 ## Privacy Policy (Web-Hosted Version)
 
-Host this at: https://littlejourney.app/privacy
+Host this at: https://littlejourney.app/privacy.html
 
 ### Privacy Policy
 
-**Last updated: February 2026**
+**Last updated: July 2026**
 
 #### 1. Information We Collect
 
@@ -156,7 +156,7 @@ Little Journey Daycare ("we", "our", "us") collects information necessary to pro
 
 **Account Information:** Name, email address, and role (parent, caregiver, or administrator).
 
-**Child Information:** Name, date of birth, classroom assignment, allergies, medical notes, and emergency contacts. This information is entered by parents and authorized caregivers only.
+**Child Information:** Name, date of birth, classroom assignment, allergies, medical notes, emergency contacts, and authorized pickups. This information is entered by parents, guardians, daycare administrators, or authorized caregivers only.
 
 **Activity Data:** Meals, naps, diaper changes, learning activities, outdoor play logs, milestones, and attendance records entered by caregivers.
 
@@ -166,7 +166,7 @@ Little Journey Daycare ("we", "our", "us") collects information necessary to pro
 
 **Payment Information:** Processed securely through Stripe. We do not store credit card numbers on our servers.
 
-**Device Information:** Device type, operating system version, and app version for technical support and crash reporting (via Sentry).
+**Device Information:** Device type, operating system version, app version, push notification token, and app diagnostics for technical support, crash reporting, and notification delivery.
 
 #### 2. Children's Privacy
 
@@ -174,8 +174,8 @@ Little Journey Daycare is designed to support Children's Online Privacy Protecti
 
 - We do not collect information directly from children under 13
 - All child data is entered by parents, guardians, or authorized caregivers
-- Parental consent is required before any child data is collected
-- Parents can review, delete, or refuse further collection of their child's data at any time through their account settings
+- Parental consent is required before child data is shown to parent or family accounts
+- Parents can review, request correction or deletion, or refuse further use of their child's data at any time through account settings or privacy support
 
 #### 3. Educational Records
 
@@ -205,19 +205,22 @@ We use collected information to:
 
 #### 6. Data Sharing
 
-We do not sell or share personal information with third parties for marketing purposes. Data is shared only with:
+We do not sell personal information or share it for third-party advertising. Data is shared only with service providers needed to operate Little Journey Daycare and with the daycare or family accounts authorized to access the record:
 
 - **Your daycare center** (as authorized by enrollment)
 - **Stripe** for payment processing
-- **Sentry** for crash reporting (anonymized device data only)
-- **Supabase** as our cloud infrastructure provider
+- **Supabase** for authentication, database, storage, realtime, and Edge Functions
+- **Sentry** for crash reporting and production diagnostics
+- **Expo** for push notification delivery
+- **Cloud infrastructure and support providers** necessary to operate the service
 
 #### 7. Data Retention and Deletion
 
 - Account data is retained while your account is active
-- You can request complete data export or deletion at any time through Profile > Privacy > Data Management
-- Upon deletion request, all personal data is permanently removed within 30 days
-- Backup data is purged within 90 days of deletion
+- You can request export or deletion through Profile > Privacy > Data Management
+- Account-level data is deleted within the published support timeline after a verified request
+- Daycare records, child activity logs, incident records, attendance records, invoices, and photos may also be controlled by the daycare operator and may be retained where required for childcare operations, legal obligations, dispute resolution, payment records, backup integrity, or safety documentation
+- Backup data is purged on the configured backup retention schedule
 
 #### 8. Your Rights
 
@@ -226,7 +229,7 @@ You have the right to:
 - Access your personal data
 - Correct inaccuracies in your data
 - Request deletion of your data
-- Export your data in machine-readable format
+- Export account-level data in machine-readable format
 - Withdraw consent for data collection
 - Opt out of non-essential communications
 
@@ -244,11 +247,11 @@ For legal matters: legal@littlejourney.app
 
 ## Terms of Service (Web-Hosted Version)
 
-Host this at: https://littlejourney.app/terms
+Host this at: https://littlejourney.app/terms.html
 
 ### Terms of Service
 
-**Last updated: February 2026**
+**Last updated: July 2026**
 
 #### 1. Acceptance of Terms
 
@@ -298,8 +301,8 @@ Little Journey Daycare provides a communication tool and is not responsible for 
 #### 8. Termination
 
 - Either party may terminate the service at any time
-- Upon termination, you may export your data within 30 days
-- After 30 days, data will be permanently deleted in accordance with our Privacy Policy
+- Upon termination, you may request export or deletion of account-level data
+- Certain daycare records, payment records, safety records, backup data, or legal records may be retained as described in our Privacy Policy or as required by the daycare operator's obligations
 - We reserve the right to suspend accounts that violate these terms
 
 #### 9. Governing Law
