@@ -118,6 +118,12 @@ Deploy `dist/` to the production web host. Then smoke-test:
 
 Follow `docs/MOBILE_RELEASE_CHECKLIST.md`.
 
+GitHub Actions now runs native EAS production builds only through manual
+`workflow_dispatch` with `run_native_builds=true`. Do not trigger that manual
+release path until the EAS production environment contains the required
+Supabase, Stripe, Sentry, Apple, and Google values. Normal pushes still run
+type-check, lint, and Jest without spending an hour on a remote native build.
+
 Core commands:
 
 ```bash

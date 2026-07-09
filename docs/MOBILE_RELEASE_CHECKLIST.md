@@ -36,6 +36,12 @@ Note: during this production-readiness pass, `npx eas` did not resolve cleanly
 in the local npm cache. Use `npx eas-cli ...` or install `eas-cli` once the npm
 cache/login environment is clean.
 
+GitHub Actions native production builds are manual. Use the `Build & Deploy`
+workflow's `workflow_dispatch` trigger with `run_native_builds=true` only after
+the EAS production environment is configured. Normal pushes intentionally skip
+native EAS builds so CI does not fail or run for an hour while account secrets
+are still being provisioned.
+
 ## 3. EAS Secrets
 
 Set production secrets in EAS before building:

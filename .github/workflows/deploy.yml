@@ -5,6 +5,17 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      run_native_builds:
+        description: 'Run EAS native production builds'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -98,13 +109,13 @@ jobs:
         continue-on-error: true
 
   # ──────────────────────────────────────
-  # Production Build (main/master push — requires EXPO_TOKEN secret)
+  # Production Build (manual release only — requires EXPO_TOKEN secret and EAS production env)
   # ──────────────────────────────────────
   production:
     name: Production Build
     runs-on: ubuntu-latest
     needs: [test, check]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && needs.check.outputs.has-expo-token == 'true'
+    if: github.event_name == 'workflow_dispatch' && inputs.run_native_builds && needs.check.outputs.has-expo-token == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -128,13 +139,13 @@ jobs:
         continue-on-error: true
 
   # ──────────────────────────────────────
-  # OTA Update (for JS-only changes — requires EXPO_TOKEN secret)
+  # OTA Update (manual release only — requires EXPO_TOKEN secret)
   # ──────────────────────────────────────
   update:
     name: OTA Update
     runs-on: ubuntu-latest
     needs: [test, check, production]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && needs.check.outputs.has-expo-token == 'true'
+    if: github.event_name == 'workflow_dispatch' && inputs.run_native_builds && needs.check.outputs.has-expo-token == 'true'
     steps:
       - uses: actions/checkout@v4
 
