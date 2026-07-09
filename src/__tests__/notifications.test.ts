@@ -31,8 +31,15 @@ jest.mock('expo-device', () => ({
 
 const { supabase } = require('../lib/supabase');
 
+let warnSpy: jest.SpyInstance;
+
 beforeEach(() => {
   jest.clearAllMocks();
+  warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  warnSpy.mockRestore();
 });
 
 describe('dispatchPushNotification', () => {
