@@ -9,6 +9,7 @@ const mockInsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockDelete = jest.fn();
 const mockEq = jest.fn();
+const mockIn = jest.fn();
 const mockOrder = jest.fn();
 const mockSingle = jest.fn();
 const mockLimit = jest.fn();
@@ -19,6 +20,7 @@ const mockChain = {
   update: mockUpdate,
   delete: mockDelete,
   eq: mockEq,
+  in: mockIn,
   order: mockOrder,
   single: mockSingle,
   limit: mockLimit,
@@ -62,6 +64,8 @@ jest.mock('../lib/offline', () => ({
 const { supabase } = require('../lib/supabase');
 
 import { childrenService } from '../services/children.service';
+import { authorizedPickupsService } from '../services/authorized-pickups.service';
+import { inviteCodesService } from '../services/invite-codes.service';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -201,6 +205,105 @@ describe('childrenService', () => {
         relationship: 'guardian',
       });
     });
+  });
+});
+
+// ============================================================
+// Invite Codes Service
+// ============================================================
+
+describe('inviteCodesService', () => {
+  it('creates a daycare-scoped invite code', async () => {
+    mockSingle.mockResolvedValue({
+      data: { id: 'invite-1', code: 'A1B2C3D4', role: 'family' },
+      error: null,
+    });
+
+    const result = await inviteCodesService.createInviteCode({
+      daycareId: 'dc-1',
+      createdBy: 'admin-1',
+      role: 'family',
+      childId: 'child-1',
+    });
+
+    expect(supabase.from).toHaveBeenCalledWith('invite_codes');
+    expect(mockInsert).toHaveBeenCalledWith({
+      daycare_id: 'dc-1',
+      created_by: 'admin-1',
+      role: 'family',
+      child_id: 'child-1',
+      classroom_id: null,
+    });
+    expect(result).toEqual({ id: 'invite-1', code: 'A1B2C3D4', role: 'family' });
+  });
+
+  it('supports admin staff invites', async () => {
+    mockSingle.mockResolvedValue({
+      data: { id: 'invite-2', code: 'Z9Y8X7W6', role: 'admin' },
+      error: null,
+    });
+
+    await inviteCodesService.createInviteCode({
+      daycareId: 'dc-1',
+      createdBy: 'admin-1',
+      role: 'admin',
+    });
+
+    expect(mockInsert).toHaveBeenCalledWith({
+      daycare_id: 'dc-1',
+      created_by: 'admin-1',
+      role: 'admin',
+      child_id: null,
+      classroom_id: null,
+    });
+  });
+});
+
+// ============================================================
+// Authorized Pickups Service
+// ============================================================
+
+describe('authorizedPickupsService', () => {
+  it('lists pickups by child ids', async () => {
+    mockOrder.mockResolvedValue({
+      data: [{ id: 'pickup-1', child_id: 'child-1', name: 'Grandma' }],
+      error: null,
+    });
+
+    const result = await authorizedPickupsService.listByChildIds(['child-1']);
+
+    expect(supabase.from).toHaveBeenCalledWith('authorized_pickups');
+    expect(mockSelect).toHaveBeenCalledWith('*');
+    expect(mockIn).toHaveBeenCalledWith('child_id', ['child-1']);
+    expect(mockOrder).toHaveBeenCalledWith('created_at', { ascending: true });
+    expect(result).toEqual([{ id: 'pickup-1', child_id: 'child-1', name: 'Grandma' }]);
+  });
+
+  it('creates an unverified authorized pickup request', async () => {
+    mockSingle.mockResolvedValue({
+      data: { id: 'pickup-1', name: 'Grandma', verified: false },
+      error: null,
+    });
+
+    const result = await authorizedPickupsService.createPickup({
+      childId: 'child-1',
+      daycareId: 'dc-1',
+      name: 'Grandma',
+      relationship: 'Grandparent',
+      phone: '555-0100',
+      createdBy: 'parent-1',
+    });
+
+    expect(supabase.from).toHaveBeenCalledWith('authorized_pickups');
+    expect(mockInsert).toHaveBeenCalledWith({
+      child_id: 'child-1',
+      daycare_id: 'dc-1',
+      name: 'Grandma',
+      relationship: 'Grandparent',
+      phone: '555-0100',
+      created_by: 'parent-1',
+    });
+    expect(result).toEqual({ id: 'pickup-1', name: 'Grandma', verified: false });
   });
 });
 

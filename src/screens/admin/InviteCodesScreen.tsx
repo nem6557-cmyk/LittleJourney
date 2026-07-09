@@ -9,11 +9,12 @@ import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/c
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase';
+import { inviteCodesService } from '../../services/invite-codes.service';
 
 type InviteCode = {
   id: string;
   code: string;
-  role: 'parent' | 'caregiver' | 'family';
+  role: 'parent' | 'caregiver' | 'family' | 'admin';
   child_id: string | null;
   classroom_id: string | null;
   used_by: string | null;
@@ -65,24 +66,12 @@ export const InviteCodesScreen = ({ navigation }: { navigation?: AdminNavigation
 
     setIsGenerating(true);
     try {
-      const insertData: any = {
-        daycare_id: profile.daycare_id,
+      const data = await inviteCodesService.createInviteCode({
+        daycareId: profile.daycare_id,
+        createdBy: profile.id,
         role: selectedRole,
-        created_by: profile.id,
-      };
-
-      // Link to a child for parent invites
-      if (selectedRole === 'parent' && selectedChildId) {
-        insertData.child_id = selectedChildId;
-      }
-
-      const { data, error } = await supabase
-        .from('invite_codes')
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) throw error;
+        childId: selectedRole === 'parent' ? selectedChildId : null,
+      });
 
       // Refresh list
       await fetchCodes();

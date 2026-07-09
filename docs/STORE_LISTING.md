@@ -38,9 +38,9 @@ PLANS & PRICING:
 - All daycare plans include a free 14-day trial
 
 PRIVACY & SECURITY:
-- COPPA and FERPA compliant
-- Row-level security ensures complete data isolation between organizations
-- End-to-end encrypted authentication
+- Built with COPPA/FERPA-aware consent and access-control workflows
+- Row-level security helps isolate records between organizations
+- Encrypted authentication and data transfer
 - No data sold to third parties — ever
 - Parents can export or delete their data at any time
 
@@ -107,8 +107,8 @@ PLANS AND PRICING
 - All daycare plans include a free 14-day trial
 
 PRIVACY AND SECURITY
-- COPPA and FERPA compliant
-- Row-level security ensures complete data isolation between organizations
+- Built with COPPA/FERPA-aware consent and access-control workflows
+- Row-level security helps isolate records between organizations
 - Encrypted authentication and data transfer
 - No data sold to third parties
 - Parents can export or delete their data at any time
@@ -133,12 +133,12 @@ daycare, childcare, preschool, parent communication, toddler, activity tracker
 - Email: nem6557@g.rit.edu
 
 ### Demo Account
-- Email: demo-parent@littlejourney.app
-- Password: demo123456
-- Notes: Tap "Try Parent Demo" on the login screen for instant access without credentials. The demo loads pre-populated sample data including a child profile, activity timeline, and messages.
+- Email: [STAGING_PARENT_EMAIL]
+- Password: [STAGING_PARENT_PASSWORD]
+- Notes: Before submission, create a staging parent account linked to a seeded demo daycare/child through an invite code. Do not rely on the local development-only pilot demo button for app review.
 
 ### Notes for Reviewer
-This app is a childcare communication platform connecting daycare centers with parents. The app requires either a daycare center account (admin/caregiver) or a parent account linked to a daycare. For review purposes, please use the "Try Parent Demo" button on the login screen which provides a fully functional demo experience with sample data. No real children's data is used in demo mode.
+This app is a childcare communication platform connecting daycare centers with parents. The app requires either a daycare center account (admin/caregiver) or a parent account linked to a daycare. For review purposes, provide a staging account that is already linked to a demo daycare with sample child records. No real children's data should be used in the review environment.
 
 ---
 
@@ -168,18 +168,18 @@ Little Journey Daycare ("we", "our", "us") collects information necessary to pro
 
 **Device Information:** Device type, operating system version, and app version for technical support and crash reporting (via Sentry).
 
-#### 2. COPPA Compliance
+#### 2. Children's Privacy
 
-Little Journey Daycare is fully compliant with the Children's Online Privacy Protection Act (COPPA):
+Little Journey Daycare is designed to support Children's Online Privacy Protection Act (COPPA) obligations:
 
 - We do not collect information directly from children under 13
 - All child data is entered by parents, guardians, or authorized caregivers
 - Parental consent is required before any child data is collected
 - Parents can review, delete, or refuse further collection of their child's data at any time through their account settings
 
-#### 3. FERPA Compliance
+#### 3. Educational Records
 
-Educational records are protected under the Family Educational Rights and Privacy Act (FERPA):
+Educational records are handled with FERPA-aware access controls:
 
 - Little Journey Daycare acts as a school official with legitimate educational interest
 - Access to educational records is strictly limited to authorized daycare staff and the child's parents or guardians
@@ -198,9 +198,9 @@ We use collected information to:
 
 #### 5. Data Storage and Security
 
-- All data is stored securely using Supabase (PostgreSQL) with row-level security policies ensuring multi-tenant data isolation
+- All data is stored using Supabase (PostgreSQL) with row-level security policies that help isolate each daycare's records
 - Authentication tokens are stored using device-level encryption (Keychain on iOS, Keystore on Android)
-- Data is encrypted in transit using TLS 1.3
+- Data is encrypted in transit using TLS
 - Access is controlled through role-based permissions at the database level
 
 #### 6. Data Sharing

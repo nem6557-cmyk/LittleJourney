@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+
+const VALID_INVITE_CODE_LENGTHS = [8, 32];
+
+const isInviteCodeLengthValid = (value: string) =>
+  VALID_INVITE_CODE_LENGTHS.includes(value.trim().length);
 
 export const InviteCodeScreen: React.FC = () => {
   const { redeemInviteCode, joinDemoDaycare, signOut, profile } = useAuth();
@@ -18,8 +23,8 @@ export const InviteCodeScreen: React.FC = () => {
   const handleRedeem = async () => {
     setError('');
     const cleanCode = code.trim().toUpperCase();
-    if (cleanCode.length !== 8) {
-      setError('Invite code must be 8 characters');
+    if (!isInviteCodeLengthValid(cleanCode)) {
+      setError('Invite code must be 8 or 32 characters');
       return;
     }
 
@@ -62,7 +67,7 @@ export const InviteCodeScreen: React.FC = () => {
             onChangeText={(t) => { setCode(t.toUpperCase()); setError(''); }}
             placeholder="ENTER CODE"
             placeholderTextColor={Colors.textMuted}
-            maxLength={8}
+            maxLength={32}
             autoCapitalize="characters"
             autoCorrect={false}
             textAlign="center"
@@ -71,16 +76,16 @@ export const InviteCodeScreen: React.FC = () => {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <Text style={styles.hint}>
-          The code is 8 characters and was provided by your daycare. It looks like: <Text style={{ fontWeight: '700' }}>A1B2C3D4</Text>
+          The code was provided by your daycare. It looks like <Text style={{ fontWeight: '700' }}>A1B2C3D4</Text> or a 32-character secure code.
         </Text>
 
         <TouchableOpacity
           style={[styles.redeemBtn, isLoading && styles.btnDisabled]}
           onPress={handleRedeem}
-          disabled={isLoading || code.length !== 8}
+          disabled={isLoading || !isInviteCodeLengthValid(code)}
         >
           <LinearGradient
-            colors={code.length === 8 ? ['#667eea', '#764ba2'] : ['#ccc', '#aaa']}
+            colors={isInviteCodeLengthValid(code) ? ['#667eea', '#764ba2'] : ['#ccc', '#aaa']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.redeemBtnGradient}
@@ -147,7 +152,7 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: FontSizes.md, color: 'rgba(255,255,255,0.7)', marginTop: Spacing.sm, textAlign: 'center', lineHeight: 22 },
   content: { padding: Spacing.xl, flex: 1 },
   codeContainer: { marginTop: Spacing.xl },
-  codeInput: { fontSize: 32, fontWeight: '800', letterSpacing: 8, backgroundColor: Colors.card, borderRadius: BorderRadius.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderWidth: 2, borderColor: Colors.borderLight, color: Colors.textPrimary, ...Shadows.small },
+  codeInput: { fontSize: 24, fontWeight: '800', letterSpacing: 3, backgroundColor: Colors.card, borderRadius: BorderRadius.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderWidth: 2, borderColor: Colors.borderLight, color: Colors.textPrimary, ...Shadows.small },
   errorText: { fontSize: FontSizes.sm, color: Colors.danger, textAlign: 'center', marginTop: Spacing.sm },
   hint: { fontSize: FontSizes.sm, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.lg, lineHeight: 20 },
   redeemBtn: { marginTop: Spacing.xl, borderRadius: BorderRadius.lg, overflow: 'hidden' },

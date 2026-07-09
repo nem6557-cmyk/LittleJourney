@@ -179,12 +179,12 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation, onNaviga
           </TouchableOpacity>
           {errors.agreeToTerms && <Text style={styles.errorText}>{errors.agreeToTerms}</Text>}
 
-          {/* COPPA notice for parents */}
+          {/* Child-data consent notice for parents */}
           {selectedRole === 'parent' && (
             <View style={styles.coppaNotice}>
               <Ionicons name="shield-checkmark" size={16} color={Colors.success} />
               <Text style={styles.coppaText}>
-                By signing up, you provide parental consent under COPPA for your child's data to be collected by the daycare. You can revoke consent at any time.
+                By signing up, you provide parental consent for your child's daycare data to be collected and shared with authorized accounts. You can revoke consent at any time.
               </Text>
             </View>
           )}

@@ -216,6 +216,50 @@ export interface Database {
         ];
       };
 
+      authorized_pickups: {
+        Row: {
+          id: string;
+          child_id: string;
+          daycare_id: string;
+          name: string;
+          relationship: string;
+          phone: string;
+          photo_url: string | null;
+          verified: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['authorized_pickups']['Row'], 'id' | 'created_at' | 'updated_at' | 'photo_url' | 'verified'> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          photo_url?: string | null;
+          verified?: boolean;
+        };
+        Update: Partial<Database['public']['Tables']['authorized_pickups']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'authorized_pickups_child_id_fkey';
+            columns: ['child_id'];
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'authorized_pickups_daycare_id_fkey';
+            columns: ['daycare_id'];
+            referencedRelation: 'daycares';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'authorized_pickups_created_by_fkey';
+            columns: ['created_by'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+
       caregiver_classrooms: {
         Row: {
           id: string;
@@ -774,7 +818,7 @@ export interface Database {
           id: string;
           daycare_id: string;
           code: string;
-          role: 'parent' | 'caregiver' | 'family';
+          role: 'parent' | 'caregiver' | 'family' | 'admin';
           child_id: string | null;
           classroom_id: string | null;
           created_by: string;
@@ -783,8 +827,17 @@ export interface Database {
           expires_at: string;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['invite_codes']['Row'], 'id' | 'created_at'> & {
+        Insert: {
           id?: string;
+          daycare_id: string;
+          code?: string;
+          role: 'parent' | 'caregiver' | 'family' | 'admin';
+          child_id?: string | null;
+          classroom_id?: string | null;
+          created_by: string;
+          used_by?: string | null;
+          used_at?: string | null;
+          expires_at?: string;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['invite_codes']['Insert']>;
@@ -858,6 +911,7 @@ export type Classroom = Database['public']['Tables']['classrooms']['Row'];
 export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type DbChild = Database['public']['Tables']['children']['Row'];
 export type ParentChild = Database['public']['Tables']['parent_children']['Row'];
+export type AuthorizedPickup = Database['public']['Tables']['authorized_pickups']['Row'];
 export type CaregiverClassroom = Database['public']['Tables']['caregiver_classrooms']['Row'];
 export type DbTimelineEntry = Database['public']['Tables']['timeline_entries']['Row'];
 export type DbComment = Database['public']['Tables']['comments']['Row'];

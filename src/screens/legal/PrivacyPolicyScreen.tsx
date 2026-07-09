@@ -10,7 +10,7 @@
 import React from 'react';
 import { ScrollView, Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, FontSizes, BorderRadius } from '../../theme/colors';
+import { Colors, Spacing, FontSizes } from '../../theme/colors';
 import { config } from '../../lib/config';
 
 interface PrivacyPolicyScreenProps {
@@ -34,14 +34,14 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ onClos
         LittleJourney collects information necessary to provide childcare communication services. This includes account information (name, email, role), child information entered by parents and caregivers (name, date of birth, allergies, medical notes), activity data (meals, naps, milestones), photos, and messages.
       </Text>
 
-      <Text style={styles.sectionTitle}>2. COPPA Compliance</Text>
+      <Text style={styles.sectionTitle}>2. Children's Privacy</Text>
       <Text style={styles.body}>
-        LittleJourney is fully compliant with the Children's Online Privacy Protection Act (COPPA). We do not collect information directly from children under 13. All child data is entered by parents, guardians, or authorized caregivers. Parental consent is required before any child data is collected. Parents can review, delete, or refuse further collection of their child's data at any time through their account settings.
+        LittleJourney is designed to support parental consent workflows for children's data. We do not collect information directly from children under 13. All child data is entered by parents, guardians, or authorized caregivers. Parental consent is required before child data is shown to parent or family accounts. Parents can request review, deletion, or refusal of further collection through their account settings or by contacting support.
       </Text>
 
-      <Text style={styles.sectionTitle}>3. FERPA Compliance</Text>
+      <Text style={styles.sectionTitle}>3. Educational Records</Text>
       <Text style={styles.body}>
-        Educational records are protected under the Family Educational Rights and Privacy Act (FERPA). LittleJourney acts as a school official with legitimate educational interest. Access to educational records is strictly limited to authorized daycare staff and the child's parents or guardians.
+        Educational records are handled with role-based access controls. Access is limited to authorized daycare staff, parents, guardians, and family users who have been invited by an authorized account.
       </Text>
 
       <Text style={styles.sectionTitle}>4. How We Use Information</Text>
@@ -51,7 +51,7 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ onClos
 
       <Text style={styles.sectionTitle}>5. Data Storage & Security</Text>
       <Text style={styles.body}>
-        All data is stored securely using Supabase (PostgreSQL) with row-level security policies ensuring multi-tenant data isolation. Authentication tokens are stored using device-level encryption (Keychain on iOS, Keystore on Android). Data is encrypted in transit using TLS 1.3.
+        All data is stored using Supabase (PostgreSQL) with row-level security policies that help isolate each daycare's records. Authentication tokens are stored using device-level encryption (Keychain on iOS, Keystore on Android). Data is encrypted in transit using TLS.
       </Text>
 
       <Text style={styles.sectionTitle}>6. Data Sharing</Text>

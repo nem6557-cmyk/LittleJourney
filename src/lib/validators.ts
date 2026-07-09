@@ -61,7 +61,9 @@ export const classroomSchema = z.object({
 // ============================================================
 
 export const inviteCodeSchema = z.object({
-  code: z.string().length(8, 'Invite code must be 8 characters').regex(/^[A-Z0-9]+$/, 'Invalid code format'),
+  code: z.string()
+    .regex(/^[A-Z0-9]+$/, 'Invalid code format')
+    .refine((value) => value.length === 8 || value.length === 32, 'Invite code must be 8 or 32 characters'),
 });
 
 // ============================================================

@@ -172,7 +172,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onNavigate
             <View style={styles.footerBadges}>
               <View style={styles.footerBadge}>
                 <Ionicons name="shield-checkmark" size={14} color={Colors.success} />
-                <Text style={styles.footerBadgeText}>COPPA Compliant</Text>
+                <Text style={styles.footerBadgeText}>Consent Controls</Text>
               </View>
               <View style={styles.footerBadge}>
                 <Ionicons name="lock-closed" size={14} color={Colors.primary} />

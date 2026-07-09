@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   UserRole, User, TimelineEntry, Message, Child, MoodType, Conversation,
   Notification, IncidentReport, AttendanceRecord, Invoice, Comment, Reaction,
-  LearningPlan, Milestone, CalendarEvent,
+  LearningPlan, Milestone, CalendarEvent, AuthorizedPerson,
 } from '../types';
 import {
   parentUser, caregiverUser, layla, adam,
@@ -20,6 +20,7 @@ import { milestonesService } from '../services/milestones.service';
 import { calendarService } from '../services/calendar.service';
 import { attendanceService } from '../services/attendance.service';
 import { notificationsService } from '../services/notifications.service';
+import { authorizedPickupsService } from '../services/authorized-pickups.service';
 import { registerForPushNotifications, dispatchPushNotification } from '../lib/notifications';
 import { onNetworkChange, processPendingMutations } from '../lib/offline';
 
@@ -198,6 +199,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
+    const profileRole = (auth.profile.role || 'parent') as UserRole;
+    const needsParentalConsent = profileRole === 'parent' || profileRole === 'family';
+    if (!auth.isDemoMode && needsParentalConsent && !auth.profile.coppa_consent_at) {
+      setSupabaseDataLoaded(false);
+      setDataLoading(false);
+      setDataError(null);
+      return;
+    }
+
     let cancelled = false;
     setDataLoading(true);
     setDataError(null);
@@ -235,6 +245,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         if (cancelled) return;
 
+        const rawChildIds = childrenData.map((c: any) => c.id).filter(Boolean);
+        const authorizedPickupsByChild = new Map<string, AuthorizedPerson[]>();
+        if (rawChildIds.length > 0) {
+          try {
+            const pickupRows = await authorizedPickupsService.listByChildIds(rawChildIds);
+            pickupRows.forEach((pickup) => {
+              const mapped: AuthorizedPerson = {
+                id: pickup.id,
+                name: pickup.name,
+                relationship: pickup.relationship,
+                phone: pickup.phone,
+                photoUrl: pickup.photo_url || undefined,
+                verified: pickup.verified,
+              };
+              const existing = authorizedPickupsByChild.get(pickup.child_id) || [];
+              authorizedPickupsByChild.set(pickup.child_id, [...existing, mapped]);
+            });
+          } catch (err) {
+            console.warn('[AppContext] Failed to fetch authorized pickups:', err);
+          }
+        }
+
         // Map DB children to app Child type
         const mappedChildren: Child[] = childrenData.map((c: any) => ({
           id: c.id,
@@ -245,7 +277,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           classroom: c.classrooms?.name || undefined,
           allergies: c.allergies || [],
           emergencyContacts: [],
-          authorizedPickups: [],
+          authorizedPickups: authorizedPickupsByChild.get(c.id) || [],
         }));
 
         if (mappedChildren.length > 0) {
@@ -584,7 +616,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
     // Intentionally re-runs only when the signed-in profile or the manual
     // refresh counter changes — not on every referenced setter/value.
-  }, [auth.profile, refreshCounter]);
+  }, [auth.profile, auth.isDemoMode, refreshCounter]);
 
   // ── refreshData: re-trigger data fetch from Supabase ──
   const refreshData = useCallback(async () => {

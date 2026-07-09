@@ -8,6 +8,7 @@ import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/c
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { inviteCodesService } from '../../services/invite-codes.service';
 import { EmptyState } from '../../components/EmptyState';
 
 interface StaffMember {
@@ -86,42 +87,29 @@ export const ManageStaffScreen = ({ navigation }: { navigation?: AdminNavigation
     }
 
     const daycareId = profile?.daycare_id;
-    if (!daycareId) {
+    if (!daycareId || !profile?.id) {
       Alert.alert('Error', 'No daycare associated with your account.');
       return;
     }
 
     setIsInviting(true);
     try {
-      // Insert an invitation record in Supabase
-      // Note: uses 'as any' because the invitations table may not be in generated types yet
-      const { error } = await (supabase.from('invitations') as any)
-        .insert({
-          daycare_id: daycareId,
-          email: inviteEmail.trim().toLowerCase(),
-          role: inviteRole,
-          invited_by: profile?.id,
-        });
-
-      if (error) throw error;
+      const invite = await inviteCodesService.createInviteCode({
+        daycareId,
+        createdBy: profile.id,
+        role: inviteRole,
+      });
 
       Alert.alert(
-        'Invite Sent',
-        `An invitation has been sent to ${inviteEmail}. They will need to create an account to join.`
+        'Invite Code Created',
+        `Code: ${invite.code}\n\nShare this code with ${inviteEmail.trim().toLowerCase()} so they can create an account and join as ${inviteRole}.`
       );
       setShowInviteModal(false);
       setInviteEmail('');
     } catch (err: any) {
       // If the invitations table doesn't exist (or is inaccessible), the invite
       // was NOT saved — report an honest failure rather than implying success.
-      if (err.code === '42P01' || err.message?.includes('relation')) {
-        Alert.alert(
-          'Could Not Send Invite',
-          'The invitation system is not set up yet, so this invite could not be saved. Please try again once the invitations table is configured.'
-        );
-      } else {
-        Alert.alert('Error', err.message || 'Failed to send invitation.');
-      }
+      Alert.alert('Could Not Create Invite', err.message || 'Failed to create an invite code.');
     } finally {
       setIsInviting(false);
     }

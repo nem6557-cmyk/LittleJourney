@@ -55,6 +55,7 @@ google-services.json
 
 # Claude Code worktrees & artifacts
 .claude/
+.codex/
 
 # Windows artifacts
 nul
@@ -64,6 +65,8 @@ nul
 # Playwright MCP scratch (screenshots, snapshots, console logs)
 .playwright-mcp/
 *.playwright-mcp.png
+playwright-report/
+test-results/
 
 # Local secrets for test seeding (NEVER commit)
 .secrets.local

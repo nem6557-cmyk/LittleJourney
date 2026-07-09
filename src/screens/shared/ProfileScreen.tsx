@@ -13,6 +13,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { trackScreen } from '../../lib/analytics';
+import { authorizedPickupsService } from '../../services/authorized-pickups.service';
+import { inviteCodesService } from '../../services/invite-codes.service';
 import { PaymentMethodsScreen } from '../payments/PaymentMethodsScreen';
 import { SubscriptionScreen } from '../payments/SubscriptionScreen';
 
@@ -36,7 +38,7 @@ interface MenuSection {
 }
 
 export const ProfileScreen = () => {
-  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents, preferences, updatePreferences } = useApp();
+  const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents, preferences, updatePreferences, refreshData } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const auth = useAuth();
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
@@ -168,13 +170,14 @@ export const ProfileScreen = () => {
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRelation, setInviteRelation] = useState('Grandparent');
-  const [invitePermission, setInvitePermission] = useState<'Full Access' | 'View Only'>('View Only');
+  const [isSendingFamilyInvite, setIsSendingFamilyInvite] = useState(false);
 
   // Add authorized person modal
   const [showAddPersonModal, setShowAddPersonModal] = useState(false);
   const [personName, setPersonName] = useState('');
   const [personRelation, setPersonRelation] = useState('');
   const [personPhone, setPersonPhone] = useState('');
+  const [isAddingPickup, setIsAddingPickup] = useState(false);
 
   // Persist biometric on/off to AppContext (profiles.preferences) + local state.
   // The existing AsyncStorage effect caches `biometric` offline.
@@ -276,7 +279,7 @@ export const ProfileScreen = () => {
     {
       title: 'Privacy & Security',
       items: [
-        { icon: 'lock-closed-outline', label: 'Privacy Settings', subtitle: 'COPPA compliant', sub: 'privacy' },
+        { icon: 'lock-closed-outline', label: 'Privacy Settings', subtitle: 'Consent controls', sub: 'privacy' },
         { icon: 'key-outline', label: 'Change Password', sub: 'change_password' },
         { icon: 'finger-print-outline', label: 'Biometric Login', subtitle: biometric ? 'Enabled' : 'Disabled' },
         { icon: 'cloud-download-outline', label: 'Download My Data', sub: 'download_data' },
@@ -559,7 +562,7 @@ export const ProfileScreen = () => {
             ))}
             <Text style={[styles.subSectionTitle, { marginTop: Spacing.lg }]}>Privacy & Compliance</Text>
             <Text style={{ fontSize: FontSizes.md, color: Colors.textSecondary, lineHeight: 24 }}>
-              Little Journey is COPPA compliant and uses end-to-end encryption for all messages and data. Your child's information is never shared with third parties.
+              Little Journey uses parental consent workflows, encrypted transport, secure authentication, and database access controls to protect childcare communication data.
             </Text>
           </View>
         );
@@ -611,8 +614,8 @@ export const ProfileScreen = () => {
             <View style={styles.privacyInfoCard}>
               <Ionicons name="shield-checkmark" size={24} color={Colors.success} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.prefLabel}>COPPA Compliant</Text>
-                <Text style={styles.prefDesc}>All data handling follows Children's Online Privacy Protection Act requirements.</Text>
+                <Text style={styles.prefLabel}>Parental Consent</Text>
+                <Text style={styles.prefDesc}>Child data access is gated by parent consent and daycare-scoped permissions.</Text>
               </View>
             </View>
           </View>
@@ -1053,7 +1056,7 @@ export const ProfileScreen = () => {
           <View style={styles.badges}>
             <View style={styles.badge}>
               <Ionicons name="shield-checkmark" size={14} color={Colors.success} />
-              <Text style={styles.badgeText}>COPPA Compliant</Text>
+              <Text style={styles.badgeText}>Parental Consent</Text>
             </View>
             <View style={styles.badge}>
               <Ionicons name="lock-closed" size={14} color={Colors.primary} />
@@ -1117,26 +1120,42 @@ export const ProfileScreen = () => {
                   </TouchableOpacity>
                 ))}
               </View>
-              <Text style={styles.formLabel}>Permission Level</Text>
-              <View style={styles.dayPickerRow}>
-                {(['View Only', 'Full Access'] as const).map((perm) => (
-                  <TouchableOpacity key={perm} style={[styles.dayChip, invitePermission === perm && styles.dayChipActive]} onPress={() => setInvitePermission(perm)}>
-                    <Text style={[styles.dayChipText, invitePermission === perm && styles.dayChipTextActive]}>{perm}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
               <TouchableOpacity
-                style={[styles.saveButton, (!inviteName || !inviteEmail) && styles.saveButtonDisabled]}
-                disabled={!inviteName || !inviteEmail}
-                onPress={() => {
-                  showAlert('Invitation Sent', `An invitation has been sent to ${inviteName} (${inviteEmail}) with ${invitePermission} permissions.`);
-                  setInviteName('');
-                  setInviteEmail('');
-                  setShowInviteModal(false);
+                style={[styles.saveButton, (!inviteName || !inviteEmail || isSendingFamilyInvite) && styles.saveButtonDisabled]}
+                disabled={!inviteName || !inviteEmail || isSendingFamilyInvite}
+                onPress={async () => {
+                  if (!inviteEmail.includes('@')) {
+                    showAlert('Invalid Email', 'Please enter a valid email address.');
+                    return;
+                  }
+                  if (!auth.profile?.daycare_id || !selectedChild.id) {
+                    showAlert('Invite Unavailable', 'Your account is not linked to a child at a daycare yet.');
+                    return;
+                  }
+                  try {
+                    setIsSendingFamilyInvite(true);
+                    const invite = await inviteCodesService.createInviteCode({
+                      daycareId: auth.profile.daycare_id,
+                      createdBy: auth.profile.id,
+                      role: 'family',
+                      childId: selectedChild.id,
+                    });
+                    showAlert(
+                      'Family Invite Code Created',
+                      `Code: ${invite.code}\n\nShare this code with ${inviteName} (${inviteEmail}) so they can create an account and view ${selectedChild.firstName}'s updates.`
+                    );
+                    setInviteName('');
+                    setInviteEmail('');
+                    setShowInviteModal(false);
+                  } catch (err: any) {
+                    showAlert('Invite Failed', err.message || 'Could not create a family invite code.');
+                  } finally {
+                    setIsSendingFamilyInvite(false);
+                  }
                 }}
               >
-                <Ionicons name="send" size={18} color={Colors.white} />
-                <Text style={styles.saveButtonText}>Send Invitation</Text>
+                {isSendingFamilyInvite ? <ActivityIndicator size="small" color={Colors.white} /> : <Ionicons name="key-outline" size={18} color={Colors.white} />}
+                <Text style={styles.saveButtonText}>{isSendingFamilyInvite ? 'Creating...' : 'Create Invite Code'}</Text>
               </TouchableOpacity>
               <View style={{ height: 40 }} />
             </ScrollView>
@@ -1167,18 +1186,38 @@ export const ProfileScreen = () => {
               <Text style={styles.formLabel}>Phone Number</Text>
               <TextInput style={styles.formInput} value={personPhone} onChangeText={setPersonPhone} placeholder="Phone number" placeholderTextColor={Colors.textMuted} keyboardType="phone-pad" />
               <TouchableOpacity
-                style={[styles.saveButton, (!personName || !personRelation || !personPhone) && styles.saveButtonDisabled]}
-                disabled={!personName || !personRelation || !personPhone}
-                onPress={() => {
-                  showAlert('Person Added', `${personName} has been added as an authorized pickup person. Verification is pending.`);
-                  setPersonName('');
-                  setPersonRelation('');
-                  setPersonPhone('');
-                  setShowAddPersonModal(false);
+                style={[styles.saveButton, (!personName || !personRelation || !personPhone || isAddingPickup) && styles.saveButtonDisabled]}
+                disabled={!personName || !personRelation || !personPhone || isAddingPickup}
+                onPress={async () => {
+                  if (!auth.profile?.daycare_id || !selectedChild.id) {
+                    showAlert('Pickup Unavailable', 'Your account is not linked to a child at a daycare yet.');
+                    return;
+                  }
+                  try {
+                    setIsAddingPickup(true);
+                    await authorizedPickupsService.createPickup({
+                      childId: selectedChild.id,
+                      daycareId: auth.profile.daycare_id,
+                      name: personName.trim(),
+                      relationship: personRelation.trim(),
+                      phone: personPhone.trim(),
+                      createdBy: auth.profile.id,
+                    });
+                    await refreshData();
+                    showAlert('Authorized Pickup Added', `${personName} has been added as an authorized pickup person. Verification is pending.`);
+                    setPersonName('');
+                    setPersonRelation('');
+                    setPersonPhone('');
+                    setShowAddPersonModal(false);
+                  } catch (err: any) {
+                    showAlert('Could Not Add Person', err.message || 'Failed to save this authorized pickup person.');
+                  } finally {
+                    setIsAddingPickup(false);
+                  }
                 }}
               >
-                <Ionicons name="person-add" size={18} color={Colors.white} />
-                <Text style={styles.saveButtonText}>Add Authorized Person</Text>
+                {isAddingPickup ? <ActivityIndicator size="small" color={Colors.white} /> : <Ionicons name="person-add" size={18} color={Colors.white} />}
+                <Text style={styles.saveButtonText}>{isAddingPickup ? 'Saving...' : 'Add Authorized Person'}</Text>
               </TouchableOpacity>
               <View style={{ height: 40 }} />
             </ScrollView>

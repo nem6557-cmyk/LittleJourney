@@ -188,35 +188,39 @@ export const DaycareOnboardingScreen: React.FC = () => {
         </LinearGradient>
       </TouchableOpacity>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xl }}>
-        <View style={{ flex: 1, height: 1, backgroundColor: Colors.borderLight }} />
-        <Text style={{ paddingHorizontal: Spacing.md, fontSize: FontSizes.sm, color: Colors.textMuted, fontWeight: '600' }}>or try the pilot</Text>
-        <View style={{ flex: 1, height: 1, backgroundColor: Colors.borderLight }} />
-      </View>
+      {__DEV__ && (
+        <>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xl }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: Colors.borderLight }} />
+            <Text style={{ paddingHorizontal: Spacing.md, fontSize: FontSizes.sm, color: Colors.textMuted, fontWeight: '600' }}>or try the pilot</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: Colors.borderLight }} />
+          </View>
 
-      <TouchableOpacity
-        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.lg, paddingVertical: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 2, borderColor: Colors.primary, backgroundColor: Colors.card }}
-        onPress={async () => {
-          setIsJoiningDemo(true);
-          const { error } = await joinDemoDaycare();
-          if (error) Alert.alert('Error', error);
-          else await refreshProfile();
-          setIsJoiningDemo(false);
-        }}
-        disabled={isJoiningDemo}
-        accessibilityLabel="Use demo daycare"
-        accessibilityRole="button"
-      >
-        {isJoiningDemo ? <ActivityIndicator color={Colors.primary} /> : (
-          <>
-            <Ionicons name="school-outline" size={20} color={Colors.primary} />
-            <Text style={{ fontSize: FontSizes.md, color: Colors.primary, fontWeight: '700' }}>Use Demo Daycare (Pilot)</Text>
-          </>
-        )}
-      </TouchableOpacity>
-      <Text style={{ fontSize: FontSizes.xs, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 18 }}>
-        Skip setup and explore Sunshine Academy with pre-configured classrooms and children.
-      </Text>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.lg, paddingVertical: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 2, borderColor: Colors.primary, backgroundColor: Colors.card }}
+            onPress={async () => {
+              setIsJoiningDemo(true);
+              const { error } = await joinDemoDaycare();
+              if (error) Alert.alert('Error', error);
+              else await refreshProfile();
+              setIsJoiningDemo(false);
+            }}
+            disabled={isJoiningDemo}
+            accessibilityLabel="Use demo daycare"
+            accessibilityRole="button"
+          >
+            {isJoiningDemo ? <ActivityIndicator color={Colors.primary} /> : (
+              <>
+                <Ionicons name="school-outline" size={20} color={Colors.primary} />
+                <Text style={{ fontSize: FontSizes.md, color: Colors.primary, fontWeight: '700' }}>Use Demo Daycare (Pilot)</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <Text style={{ fontSize: FontSizes.xs, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 18 }}>
+            Skip setup and explore Sunshine Academy with pre-configured classrooms and children.
+          </Text>
+        </>
+      )}
 
       <TouchableOpacity style={{ alignItems: 'center', marginTop: Spacing.lg }} onPress={signOut}>
         <Text style={{ fontSize: FontSizes.sm, color: Colors.textMuted }}>Sign out</Text>
