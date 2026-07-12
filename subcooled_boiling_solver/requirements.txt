@@ -1,0 +1,18 @@
+# Numerical core
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+
+# Thermophysical properties
+CoolProp>=6.4
+
+# Experimental-data ingest
+openpyxl>=3.1
+
+# Tests
+pytest>=7.0
+
+# Optional: STEP geometry extraction (tube-centre detection).
+# Only needed if you have the proprietary .step files; the package
+# degrades gracefully to tabulated geometry when gmsh is absent.
+# gmsh>=4.11
