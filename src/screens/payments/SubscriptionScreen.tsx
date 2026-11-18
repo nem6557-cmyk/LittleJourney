@@ -1,227 +1,199 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
-import { createCheckoutSession, getSubscriptionStatus } from '../../lib/stripe';
+import { config } from '../../lib/config';
+import {
+  createCheckoutSession, getSubscriptionStatus, openBillingPortal, PLAN_FEATURES,
+} from '../../lib/stripe';
+import { canPurchaseSubscriptionHere, summarizeSubscription } from '../../lib/billing';
 
-interface PlanFeature {
-  text: string;
-  included: boolean;
-}
+type DaycarePlanId = 'starter' | 'professional' | 'enterprise';
 
-interface Plan {
-  id: string;
+interface PlanCard {
+  id: DaycarePlanId;
   name: string;
-  price: string;
-  priceNote: string;
-  features: PlanFeature[];
   popular?: boolean;
 }
 
-const daycarePlans: Plan[] = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    price: '$29',
-    priceNote: '/month',
-    features: [
-      { text: 'Up to 20 children', included: true },
-      { text: '1 classroom', included: true },
-      { text: 'Timeline & messaging', included: true },
-      { text: 'Daily reports', included: true },
-      { text: 'Photo gallery', included: false },
-      { text: 'Tuition invoicing', included: false },
-      { text: 'Priority support', included: false },
-    ],
-  },
-  {
-    id: 'professional',
-    name: 'Professional',
-    price: '$59',
-    priceNote: '/month',
-    popular: true,
-    features: [
-      { text: 'Up to 50 children', included: true },
-      { text: '5 classrooms', included: true },
-      { text: 'Timeline & messaging', included: true },
-      { text: 'Daily reports', included: true },
-      { text: 'Photo gallery', included: true },
-      { text: 'Tuition invoicing', included: true },
-      { text: 'Priority support', included: false },
-    ],
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: '$99',
-    priceNote: '/month',
-    features: [
-      { text: 'Unlimited children', included: true },
-      { text: 'Unlimited classrooms', included: true },
-      { text: 'Timeline & messaging', included: true },
-      { text: 'Daily reports', included: true },
-      { text: 'Photo gallery', included: true },
-      { text: 'Tuition invoicing', included: true },
-      { text: 'Priority support + API', included: true },
-    ],
-  },
+const PLANS: PlanCard[] = [
+  { id: 'starter', name: 'Starter' },
+  { id: 'professional', name: 'Professional', popular: true },
+  { id: 'enterprise', name: 'Enterprise' },
 ];
 
-const parentPlans: Plan[] = [
-  {
-    id: 'free',
-    name: 'Free',
-    price: '$0',
-    priceNote: '',
-    features: [
-      { text: 'View timeline', included: true },
-      { text: 'Basic messaging', included: true },
-      { text: 'Daily summary', included: true },
-      { text: 'HD photo downloads', included: false },
-      { text: 'Detailed reports', included: false },
-      { text: 'Milestone analytics', included: false },
-    ],
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    price: '$4.99',
-    priceNote: '/month',
-    popular: true,
-    features: [
-      { text: 'View timeline', included: true },
-      { text: 'Basic messaging', included: true },
-      { text: 'Daily summary', included: true },
-      { text: 'HD photo downloads', included: true },
-      { text: 'Detailed reports', included: true },
-      { text: 'Milestone analytics', included: true },
-    ],
-  },
-];
+const limitText = (n: number, noun: string) =>
+  n === Infinity || n < 0 ? `Unlimited ${noun}` : `Up to ${n} ${noun}`;
 
-export const SubscriptionScreen: React.FC<{ type: 'daycare' | 'parent'; onClose?: () => void }> = ({ type, onClose }) => {
+const featureList = (id: DaycarePlanId) => {
+  const f = PLAN_FEATURES[id];
+  return [
+    { text: limitText(f.maxChildren, 'children'), included: true },
+    { text: f.maxClassrooms === 1 ? '1 classroom' : limitText(f.maxClassrooms, 'classrooms'), included: true },
+    { text: 'Timeline, messaging & daily reports', included: true },
+    { text: 'Photo gallery', included: f.photoGallery },
+    { text: 'Tuition invoicing', included: f.tuitionInvoicing },
+    { text: 'Priority support', included: f.prioritySupport },
+  ];
+};
+
+const TONE_COLORS = {
+  good: { bg: Colors.successLight, fg: Colors.success },
+  warn: { bg: Colors.warningLight, fg: Colors.warning },
+  bad: { bg: Colors.dangerLight, fg: Colors.danger },
+  neutral: { bg: Colors.borderLight, fg: Colors.textSecondary },
+};
+
+/**
+ * Daycare subscription screen (admins only).
+ *
+ * Families use Little Journey for free — there is nothing for a parent to buy.
+ * Plans can only be purchased on the web: Apple and Google require their own
+ * billing for digital subscriptions sold inside native apps, so the mobile apps
+ * show status and point admins to the web dashboard.
+ */
+export const SubscriptionScreen: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
   const { profile, daycare } = useAuth();
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<string | null>(null);
-  const plans = type === 'daycare' ? daycarePlans : parentPlans;
+  const [busy, setBusy] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sub, setSub] = useState<{ status: string; plan: string | null; trialEnd: string | null } | null>(null);
 
-  // Fetch current subscription status on mount
+  const canBuy = canPurchaseSubscriptionHere(Platform.OS);
+  const daycareId = daycare?.id || profile?.daycare_id || undefined;
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setSub(daycareId ? await getSubscriptionStatus(daycareId) : null);
+    setLoading(false);
+  }, [daycareId]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // Returning from Stripe (web redirect or app resume) should show the new plan.
   useEffect(() => {
-    const fetchStatus = async () => {
-      const daycareId = daycare?.id || profile?.daycare_id || undefined;
-      const parentId = type === 'parent' ? profile?.id : undefined;
-      const status = await getSubscriptionStatus(
-        type === 'daycare' ? daycareId : undefined,
-        parentId
-      );
-      if (status?.plan) {
-        setCurrentPlan(status.plan);
-      }
-    };
-    fetchStatus();
-  }, [type, profile, daycare]);
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onFocus = () => { refresh(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refresh]);
 
-  const handleSubscribe = async (planId: string) => {
-    if (planId === 'free' || planId === currentPlan) return;
+  const summary = summarizeSubscription(sub);
+  const tone = TONE_COLORS[summary.tone];
+  const hasLiveSubscription = !!sub && ['active', 'past_due'].includes(sub.status);
 
-    setIsLoading(true);
-    setSelectedPlan(planId);
-    try {
-      const daycareId = daycare?.id || profile?.daycare_id || '';
-      const stripePlan = type === 'parent' ? 'parent_premium' : planId as 'starter' | 'professional' | 'enterprise';
+  const handleChoose = async (plan: DaycarePlanId) => {
+    setBusy(plan);
+    const result = await createCheckoutSession({ plan });
+    setBusy(null);
+    if (!result.ok) Alert.alert('Could not start checkout', result.error);
+  };
 
-      const url = await createCheckoutSession({
-        plan: stripePlan,
-        daycareId,
-      });
-
-      if (!url) {
-        Alert.alert('Error', 'Could not create checkout session. Please try again.');
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create checkout session');
-    } finally {
-      setIsLoading(false);
-    }
+  const handleManage = async () => {
+    setBusy('portal');
+    const result = await openBillingPortal();
+    setBusy(null);
+    if (!result.ok) Alert.alert('Could not open billing', result.error);
   };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {onClose && (
-        <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+        <TouchableOpacity style={styles.closeBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
           <Ionicons name="close" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
       )}
 
-      <Text style={styles.title}>{type === 'daycare' ? 'Choose Your Plan' : 'Upgrade to Premium'}</Text>
+      <Text style={styles.title}>Plan & Billing</Text>
+
+      {loading ? (
+        <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.xl }} />
+      ) : (
+        <View style={[styles.summaryCard, { backgroundColor: tone.bg }]} accessibilityRole="summary">
+          <Text style={[styles.summaryHeadline, { color: tone.fg }]}>{summary.headline}</Text>
+          <Text style={styles.summaryDetail}>{summary.detail}</Text>
+        </View>
+      )}
+
+      {!canBuy && (
+        <View style={styles.noteCard}>
+          <Ionicons name="laptop-outline" size={22} color={Colors.primary} />
+          <Text style={styles.noteText}>
+            Plans are managed on the web. Sign in at littlejourney.app from a browser to choose a plan, update your
+            card, view receipts, or cancel. Families never pay to use the app.
+          </Text>
+        </View>
+      )}
+
+      {canBuy && hasLiveSubscription && (
+        <TouchableOpacity
+          style={styles.manageBtn}
+          onPress={handleManage}
+          disabled={busy !== null}
+          accessibilityRole="button"
+          accessibilityLabel="Manage billing, change plan or cancel"
+        >
+          {busy === 'portal' ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.manageBtnText}>Manage billing / cancel</Text>}
+        </TouchableOpacity>
+      )}
+
       <Text style={styles.subtitle}>
-        {type === 'daycare'
-          ? 'All plans include a 14-day free trial. No credit card required.'
-          : 'Unlock HD photos, detailed reports, and milestone analytics.'}
+        {`All plans start with a ${config.daycareTrial.durationDays}-day free trial, then bill monthly. Cancel anytime.`}
       </Text>
 
-      {plans.map((plan) => (
-        <TouchableOpacity
-          key={plan.id}
-          style={[styles.planCard, plan.popular && styles.planCardPopular, selectedPlan === plan.id && styles.planCardSelected]}
-          onPress={() => setSelectedPlan(plan.id)}
-        >
-          {plan.popular && (
-            <View style={styles.popularBadge}>
-              <Text style={styles.popularText}>Most Popular</Text>
-            </View>
-          )}
-          <View style={styles.planHeader}>
-            <Text style={styles.planName}>{plan.name}</Text>
-            <View style={styles.priceRow}>
-              <Text style={styles.planPrice}>{plan.price}</Text>
-              <Text style={styles.planPriceNote}>{plan.priceNote}</Text>
-            </View>
-          </View>
-
-          {plan.features.map((feature, i) => (
-            <View key={i} style={styles.featureRow}>
-              <Ionicons
-                name={feature.included ? 'checkmark-circle' : 'close-circle-outline'}
-                size={18}
-                color={feature.included ? Colors.success : Colors.textMuted}
-              />
-              <Text style={[styles.featureText, !feature.included && styles.featureTextMuted]}>
-                {feature.text}
-              </Text>
-            </View>
-          ))}
-
-          <TouchableOpacity
-            style={[styles.selectBtn, plan.popular && styles.selectBtnPopular]}
-            onPress={() => handleSubscribe(plan.id)}
-            disabled={isLoading}
+      {PLANS.map((plan) => {
+        const price = config.plans.daycare[plan.id].price / 100;
+        const isCurrent = !!sub && sub.plan === plan.id && ['active', 'trialing'].includes(sub.status) && hasLiveSubscription;
+        return (
+          <View
+            key={plan.id}
+            style={[styles.planCard, plan.popular && styles.planCardPopular]}
+            accessibilityLabel={`${plan.name} plan, $${price} per month`}
           >
-            {plan.popular ? (
-              <LinearGradient colors={['#667eea', '#764ba2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.selectBtnGradient}>
-                {isLoading && selectedPlan === plan.id ? (
-                  <ActivityIndicator color={Colors.white} />
+            {plan.popular && (
+              <View style={styles.popularBadge}><Text style={styles.popularText}>Most Popular</Text></View>
+            )}
+            <View style={styles.planHeader}>
+              <Text style={styles.planName}>{plan.name}</Text>
+              <View style={styles.priceRow}>
+                <Text style={styles.planPrice}>{`$${price}`}</Text>
+                <Text style={styles.planPriceNote}>/month</Text>
+              </View>
+            </View>
+
+            {featureList(plan.id).map((feature) => (
+              <View key={feature.text} style={styles.featureRow}>
+                <Ionicons
+                  name={feature.included ? 'checkmark-circle' : 'close-circle-outline'}
+                  size={18}
+                  color={feature.included ? Colors.success : Colors.textMuted}
+                />
+                <Text style={[styles.featureText, !feature.included && styles.featureTextMuted]}>{feature.text}</Text>
+              </View>
+            ))}
+
+            {canBuy && (
+              <TouchableOpacity
+                style={[styles.selectBtn, plan.popular && styles.selectBtnPopular, (isCurrent || hasLiveSubscription) && styles.selectBtnDisabled]}
+                onPress={() => handleChoose(plan.id)}
+                disabled={busy !== null || isCurrent || hasLiveSubscription}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: busy !== null || isCurrent || hasLiveSubscription }}
+              >
+                {busy === plan.id ? (
+                  <ActivityIndicator color={plan.popular ? Colors.white : Colors.primary} />
                 ) : (
-                  <Text style={styles.selectBtnTextWhite}>
-                    {plan.id === currentPlan ? 'Current Plan' : type === 'daycare' ? 'Start Free Trial' : plan.id === 'free' ? 'Current Plan' : 'Upgrade Now'}
+                  <Text style={[styles.selectBtnText, plan.popular && styles.selectBtnTextWhite]}>
+                    {isCurrent ? 'Current plan' : hasLiveSubscription ? 'Change in billing portal' : 'Start free trial'}
                   </Text>
                 )}
-              </LinearGradient>
-            ) : (
-              <View style={styles.selectBtnFlat}>
-                <Text style={styles.selectBtnText}>
-                  {plan.id === currentPlan ? 'Current Plan' : type === 'daycare' ? 'Start Free Trial' : plan.id === 'free' ? 'Current Plan' : 'Select'}
-                </Text>
-              </View>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
-        </TouchableOpacity>
-      ))}
+          </View>
+        );
+      })}
     </ScrollView>
   );
 };
@@ -229,12 +201,18 @@ export const SubscriptionScreen: React.FC<{ type: 'daycare' | 'parent'; onClose?
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl },
-  closeBtn: { alignSelf: 'flex-end', padding: Spacing.sm },
-  title: { fontSize: FontSizes.xxl, fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
-  subtitle: { fontSize: FontSizes.md, color: Colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm, marginBottom: Spacing.xl, lineHeight: 22 },
+  closeBtn: { alignSelf: 'flex-end', padding: Spacing.md, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: FontSizes.xxl, fontWeight: '800', color: Colors.textPrimary, textAlign: 'center', marginBottom: Spacing.lg },
+  subtitle: { fontSize: FontSizes.md, color: Colors.textSecondary, textAlign: 'center', marginVertical: Spacing.lg, lineHeight: 22 },
+  summaryCard: { borderRadius: BorderRadius.lg, padding: Spacing.lg, marginBottom: Spacing.md },
+  summaryHeadline: { fontSize: FontSizes.lg, fontWeight: '800' },
+  summaryDetail: { fontSize: FontSizes.md, color: Colors.textSecondary, marginTop: Spacing.xs, lineHeight: 20 },
+  noteCard: { flexDirection: 'row', gap: Spacing.md, backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.lg, alignItems: 'flex-start', ...Shadows.small },
+  noteText: { flex: 1, fontSize: FontSizes.md, color: Colors.textSecondary, lineHeight: 22 },
+  manageBtn: { backgroundColor: Colors.primary, borderRadius: BorderRadius.lg, paddingVertical: Spacing.md, alignItems: 'center', minHeight: 48, justifyContent: 'center' },
+  manageBtnText: { color: Colors.white, fontWeight: '700', fontSize: FontSizes.md },
   planCard: { backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.lg, marginBottom: Spacing.lg, borderWidth: 2, borderColor: Colors.borderLight, ...Shadows.small },
   planCardPopular: { borderColor: Colors.primary },
-  planCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + '08' },
   popularBadge: { position: 'absolute', top: -12, alignSelf: 'center', backgroundColor: Colors.primary, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: BorderRadius.round },
   popularText: { fontSize: FontSizes.xs, fontWeight: '700', color: Colors.white },
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
@@ -243,12 +221,11 @@ const styles = StyleSheet.create({
   planPrice: { fontSize: FontSizes.xxl, fontWeight: '800', color: Colors.primary },
   planPriceNote: { fontSize: FontSizes.sm, color: Colors.textMuted, marginLeft: 2 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
-  featureText: { fontSize: FontSizes.md, color: Colors.textPrimary },
+  featureText: { fontSize: FontSizes.md, color: Colors.textPrimary, flexShrink: 1 },
   featureTextMuted: { color: Colors.textMuted },
-  selectBtn: { marginTop: Spacing.md, borderRadius: BorderRadius.lg, overflow: 'hidden' },
-  selectBtnPopular: {},
-  selectBtnGradient: { alignItems: 'center', paddingVertical: Spacing.md },
-  selectBtnFlat: { alignItems: 'center', paddingVertical: Spacing.md, borderWidth: 1, borderColor: Colors.borderLight, borderRadius: BorderRadius.lg },
-  selectBtnText: { fontSize: FontSizes.md, fontWeight: '700', color: Colors.textSecondary },
-  selectBtnTextWhite: { fontSize: FontSizes.md, fontWeight: '700', color: Colors.white },
+  selectBtn: { marginTop: Spacing.md, borderRadius: BorderRadius.lg, paddingVertical: Spacing.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.primary, minHeight: 48, justifyContent: 'center' },
+  selectBtnPopular: { backgroundColor: Colors.primary },
+  selectBtnDisabled: { opacity: 0.5 },
+  selectBtnText: { fontSize: FontSizes.md, fontWeight: '700', color: Colors.primary },
+  selectBtnTextWhite: { color: Colors.white },
 });

@@ -1,99 +1,45 @@
-// Supabase Edge Function: List Stripe Payment Methods
-// Returns the authenticated user's saved payment methods and default payment method ID
+// Supabase Edge Function: list the caller's saved cards (minimal fields only).
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
-
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2023-10-16' });
-
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-);
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireCaller } from '../_shared/auth.ts';
+import { errorResponse, json, preflight } from '../_shared/http.ts';
+import { existingCustomerId, stripe } from '../_shared/stripe.ts';
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  const pre = preflight(req);
+  if (pre) return pre;
 
   try {
-    // Verify auth
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const caller = await requireCaller(req);
+    const customerId = existingCustomerId(caller);
+    if (!customerId) return json({ paymentMethods: [], defaultPaymentMethodId: null });
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const [methods, customer] = await Promise.all([
+      stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 20 }),
+      stripe.customers.retrieve(customerId),
+    ]);
 
-    // Find the Stripe customer by email
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile?.email) {
-      return new Response(JSON.stringify({ paymentMethods: [], defaultPaymentMethodId: null }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const customers = await stripe.customers.list({ email: profile.email, limit: 1 });
-    if (customers.data.length === 0) {
-      return new Response(JSON.stringify({ paymentMethods: [], defaultPaymentMethodId: null }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const customer = customers.data[0];
-
-    // List all card payment methods for this customer
-    const paymentMethods = await stripe.paymentMethods.list({
-      customer: customer.id,
-      type: 'card',
-    });
-
-    // Get default payment method from the customer or their default subscription
     let defaultPaymentMethodId: string | null = null;
-    if (typeof customer.invoice_settings?.default_payment_method === 'string') {
-      defaultPaymentMethodId = customer.invoice_settings.default_payment_method;
-    } else if (customer.invoice_settings?.default_payment_method?.id) {
-      defaultPaymentMethodId = customer.invoice_settings.default_payment_method.id;
+    if (!('deleted' in customer && customer.deleted)) {
+      const dpm = (customer as { invoice_settings?: { default_payment_method?: unknown } }).invoice_settings
+        ?.default_payment_method;
+      if (typeof dpm === 'string') defaultPaymentMethodId = dpm;
+      else if (dpm && typeof dpm === 'object' && 'id' in dpm) defaultPaymentMethodId = (dpm as { id: string }).id;
     }
 
-    return new Response(
-      JSON.stringify({
-        paymentMethods: paymentMethods.data,
-        defaultPaymentMethodId,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // Only what the UI needs — never return the full Stripe object.
+    const paymentMethods = methods.data.map((pm) => ({
+      id: pm.id,
+      card: {
+        brand: pm.card?.brand ?? 'unknown',
+        last4: pm.card?.last4 ?? '????',
+        exp_month: pm.card?.exp_month ?? 0,
+        exp_year: pm.card?.exp_year ?? 0,
       },
-    );
+    }));
+
+    return json({ paymentMethods, defaultPaymentMethodId });
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return errorResponse('list-payment-methods', err);
   }
 });

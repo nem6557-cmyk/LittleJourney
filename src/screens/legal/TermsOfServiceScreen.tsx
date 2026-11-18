@@ -45,7 +45,7 @@ export const TermsOfServiceScreen: React.FC<TermsOfServiceScreenProps> = ({ onCl
 
       <Text style={styles.sectionTitle}>4. Subscription & Billing</Text>
       <Text style={styles.body}>
-        Daycare centers may subscribe to paid plans. All plans include a 14-day free trial. Subscriptions renew automatically unless canceled. Parents may optionally subscribe to premium features. Refunds are handled per our refund policy.
+        Daycare centers may subscribe to paid plans, which are purchased and managed on the LittleJourney website. All plans include a 14-day free trial and then renew monthly until canceled. You can cancel at any time from the billing portal; cancellation takes effect at the end of the current billing period. Families use LittleJourney free of charge. Tuition invoices are an agreement between a family and their daycare. When an invoice is paid through LittleJourney, the payment is processed by Stripe on behalf of the daycare, LittleJourney retains a 5% platform fee, and Stripe's card-processing fees apply. Requests to refund tuition should be sent to your daycare.
       </Text>
 
       <Text style={styles.sectionTitle}>5. Acceptable Use</Text>

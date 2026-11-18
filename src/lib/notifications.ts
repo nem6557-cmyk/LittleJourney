@@ -110,22 +110,19 @@ export async function setBadgeCount(count: number): Promise<void> {
 }
 
 /**
- * Dispatch a push notification to a specific user via the send-push edge function.
- * Called after inserting a notification record in the database.
+ * Ask the send-push edge function to deliver the push for an existing
+ * `notifications` row. Only the row id is sent: the server reads the title, body
+ * and recipient from the database and enforces tenant scoping, so a client can
+ * never push arbitrary text. Delivery is idempotent server-side (a database
+ * webhook may already have sent it).
  */
-export async function dispatchPushNotification(record: {
-  user_id: string;
-  title: string;
-  body: string;
-  type?: string;
-  data?: Record<string, any>;
-}): Promise<void> {
+export async function dispatchPushNotification(record: { id: string }): Promise<void> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return;
 
     const { error } = await supabase.functions.invoke('send-push', {
-      body: { record },
+      body: { record: { id: record.id } },
     });
     if (error) {
       console.warn('[Notifications] Push dispatch failed:', error.message);

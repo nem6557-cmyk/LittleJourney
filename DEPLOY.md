@@ -19,7 +19,7 @@ supabase login            # opens a browser
 supabase link --project-ref YOUR_PROJECT_REF
 ```
 
-### 1b. Apply migrations (001–011)
+### 1b. Apply migrations (001–014)
 ```bash
 supabase db push
 ```
@@ -27,10 +27,11 @@ This creates the schema, RLS, RPCs (`redeem_invite_code`, `create_daycare`,
 `create_conversation`), and tables (announcements, coppa_consents, stripe_events).
 
 > If `db push` complains the remote already has objects, you can instead run each
-> file in the SQL editor in order 001→011, or `supabase migration repair`.
+> file in the SQL editor in order 001→014, or `supabase migration repair`.
 
-### 1c. Deploy the 10 edge functions
+### 1c. Deploy the 12 edge functions
 ```bash
+supabase functions deploy create-billing-portal
 supabase functions deploy create-checkout
 supabase functions deploy create-connect
 supabase functions deploy create-invoice
@@ -39,6 +40,7 @@ supabase functions deploy data-deletion
 supabase functions deploy data-export
 supabase functions deploy detach-payment-method
 supabase functions deploy list-payment-methods
+supabase functions deploy set-default-payment-method
 supabase functions deploy send-push
 supabase functions deploy stripe-webhook
 ```
@@ -53,21 +55,32 @@ automatically. You must set the rest:
 supabase secrets set \
   STRIPE_SECRET_KEY=sk_test_xxx \
   STRIPE_WEBHOOK_SECRET=whsec_xxx \
+  STRIPE_CONNECT_WEBHOOK_SECRET=whsec_yyy \
   STRIPE_PRICE_STARTER=price_xxx \
   STRIPE_PRICE_PROFESSIONAL=price_xxx \
   STRIPE_PRICE_ENTERPRISE=price_xxx \
-  STRIPE_PRICE_PARENT_PREMIUM=price_xxx \
+  APP_ALLOWED_RETURN_ORIGINS=https://littlejourney.app \
   PUSH_WEBHOOK_SECRET=$(openssl rand -hex 32)
 ```
 Note the `PUSH_WEBHOOK_SECRET` value you generated — you need it in step 1f.
 
-### 1e. Wire the Stripe webhook **[you]**
-In the Stripe dashboard → Developers → Webhooks → add endpoint:
-`https://YOUR_PROJECT_REF.functions.supabase.co/stripe-webhook`
-Select events: `checkout.session.completed`, `invoice.paid`,
-`invoice.payment_failed`, `customer.subscription.updated`,
-`customer.subscription.deleted`, `account.updated`. Copy the signing secret into
-`STRIPE_WEBHOOK_SECRET` (re-run `supabase secrets set` if needed).
+### 1e. Wire the Stripe webhooks + portal **[you]**
+Create **two** endpoints in Stripe (Developers → Webhooks), both pointing at
+`https://YOUR_PROJECT_REF.functions.supabase.co/stripe-webhook`:
+
+| Endpoint | Listen to | Signing secret goes in |
+|---|---|---|
+| Account events | `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`, `invoice.voided`, `invoice.marked_uncollectible` | `STRIPE_WEBHOOK_SECRET` |
+| **Connected accounts** ("Listen to events on Connected accounts") | `account.updated` | `STRIPE_CONNECT_WEBHOOK_SECRET` |
+
+Then enable the **Customer portal** (Settings → Billing → Customer portal): allow
+cancel, plan switching between your 3 prices, and payment-method updates. The
+app's "Manage billing / cancel" button opens it.
+
+Schedule the nightly overdue-invoice job (SQL editor; needs the `pg_cron` extension):
+```sql
+select cron.schedule('mark-overdue-invoices', '15 5 * * *', 'select public.mark_overdue_invoices()');
+```
 
 ### 1f. Wire the push DB webhook **[you]**
 So new `notifications` rows trigger `send-push`. In Supabase → Database →
@@ -76,9 +89,9 @@ Webhooks → create:
 - Type: Supabase Edge Function → `send-push`
 - HTTP Headers: add `x-webhook-secret: <the PUSH_WEBHOOK_SECRET from 1d>`
 
-### 1g. Storage buckets **[you]**
-Migration 003 sets storage policies. Confirm the buckets it references exist
-(Storage tab): `avatars`, `timelinePhotos` (create them if missing, private).
+### 1g. Storage buckets
+Migration 003 creates the buckets (`avatars`, `timeline-photos`, `documents`,
+`daycare-assets`) and their policies. Just confirm they appear in the Storage tab.
 
 ---
 

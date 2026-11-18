@@ -1,9 +1,10 @@
-const CACHE_NAME = 'littlejourney-v2';
+const CACHE_NAME = 'littlejourney-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
+  '/icon-maskable-512.png',
 ];
 
 // Install — cache static shell

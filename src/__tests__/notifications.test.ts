@@ -43,39 +43,39 @@ afterEach(() => {
 });
 
 describe('dispatchPushNotification', () => {
-  it('sends push notification when session exists', async () => {
+  it('sends only the notification id when a session exists', async () => {
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
+      data: { session: { access_token: 'test-token' } },
+    });
+    (supabase.functions.invoke as jest.Mock).mockResolvedValue({ error: null });
+
+    await dispatchPushNotification({ id: 'notif-1' });
+
+    expect(supabase.functions.invoke).toHaveBeenCalledWith('send-push', {
+      body: { record: { id: 'notif-1' } },
+    });
+  });
+
+  it('never forwards caller-supplied title/body/recipient (server reads them from the DB)', async () => {
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
       data: { session: { access_token: 'test-token' } },
     });
     (supabase.functions.invoke as jest.Mock).mockResolvedValue({ error: null });
 
     await dispatchPushNotification({
-      user_id: 'user-123',
-      title: 'New Activity',
-      body: 'Your child had lunch',
-    });
+      id: 'notif-2',
+      user_id: 'victim',
+      title: 'Your account is locked, tap here',
+    } as unknown as { id: string });
 
-    expect(supabase.functions.invoke).toHaveBeenCalledWith('send-push', {
-      body: {
-        record: {
-          user_id: 'user-123',
-          title: 'New Activity',
-          body: 'Your child had lunch',
-        },
-      },
-    });
+    const call = (supabase.functions.invoke as jest.Mock).mock.calls[0];
+    expect(call[1].body.record).toEqual({ id: 'notif-2' });
   });
 
   it('does not send when no session', async () => {
-    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
-      data: { session: null },
-    });
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({ data: { session: null } });
 
-    await dispatchPushNotification({
-      user_id: 'user-123',
-      title: 'Test',
-      body: 'Test body',
-    });
+    await dispatchPushNotification({ id: 'notif-3' });
 
     expect(supabase.functions.invoke).not.toHaveBeenCalled();
   });
@@ -84,57 +84,14 @@ describe('dispatchPushNotification', () => {
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
       data: { session: { access_token: 'test-token' } },
     });
-    (supabase.functions.invoke as jest.Mock).mockResolvedValue({
-      error: { message: 'Function error' },
-    });
+    (supabase.functions.invoke as jest.Mock).mockResolvedValue({ error: { message: 'Function error' } });
 
-    // Should not throw
-    await expect(
-      dispatchPushNotification({
-        user_id: 'user-123',
-        title: 'Test',
-        body: 'Test',
-      })
-    ).resolves.toBeUndefined();
+    await expect(dispatchPushNotification({ id: 'notif-4' })).resolves.toBeUndefined();
   });
 
   it('handles network error gracefully', async () => {
     (supabase.auth.getSession as jest.Mock).mockRejectedValue(new Error('Network error'));
 
-    // Should not throw
-    await expect(
-      dispatchPushNotification({
-        user_id: 'user-123',
-        title: 'Test',
-        body: 'Test',
-      })
-    ).resolves.toBeUndefined();
-  });
-
-  it('includes optional type and data fields', async () => {
-    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
-      data: { session: { access_token: 'test-token' } },
-    });
-    (supabase.functions.invoke as jest.Mock).mockResolvedValue({ error: null });
-
-    await dispatchPushNotification({
-      user_id: 'user-123',
-      title: 'Meal Update',
-      body: 'Emma had lunch',
-      type: 'meal',
-      data: { childId: 'child-456' },
-    });
-
-    expect(supabase.functions.invoke).toHaveBeenCalledWith('send-push', {
-      body: {
-        record: {
-          user_id: 'user-123',
-          title: 'Meal Update',
-          body: 'Emma had lunch',
-          type: 'meal',
-          data: { childId: 'child-456' },
-        },
-      },
-    });
+    await expect(dispatchPushNotification({ id: 'notif-5' })).resolves.toBeUndefined();
   });
 });

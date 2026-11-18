@@ -1,142 +1,129 @@
-// Supabase Edge Function: Create Stripe Invoice for Tuition
-// Creates a Stripe Invoice linked to the daycare's Connect account
+// Supabase Edge Function: create/send/return the Stripe-hosted payment page for a
+// tuition invoice (Stripe Connect destination charge with a platform fee).
+//
+// Who may call: the daycare ADMIN of the invoice's daycare (to issue it) or the
+// invoice's PARENT (to pay it). Anyone else gets 403 *before* any Stripe data is
+// read, so hosted-invoice URLs can't be harvested by other tenants.
+//
+// Every Stripe write carries a deterministic idempotency key, so a retry after a
+// partial failure resumes instead of duplicating invoices or line items.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
+import { admin, requireCaller } from '../_shared/auth.ts';
+import { errorResponse, HttpError, json, preflight, readJson } from '../_shared/http.ts';
+import { getOrCreateCustomerFor, stripe } from '../_shared/stripe.ts';
 
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2023-10-16' });
-const PLATFORM_FEE_PERCENT = 5; // 5% platform fee
-
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const PLATFORM_FEE_PERCENT = Number(Deno.env.get('PLATFORM_FEE_PERCENT') ?? '5');
 
 serve(async (req) => {
+  const pre = preflight(req);
+  if (pre) return pre;
+
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return new Response('Unauthorized', { status: 401 });
+    const caller = await requireCaller(req);
+    const { invoiceId } = await readJson<{ invoiceId?: string }>(req);
+    if (!invoiceId || typeof invoiceId !== 'string') throw new HttpError(400, 'invoiceId is required.');
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return new Response('Unauthorized', { status: 401 });
-
-    const { invoiceId } = await req.json();
-
-    // Get invoice details
-    const { data: invoice } = await supabase.from('invoices')
-      .select('*, daycare:daycares!daycare_id(stripe_account_id), parent:profiles!parent_id(id, email, first_name, last_name, stripe_customer_id)')
+    const { data: invoice } = await admin
+      .from('invoices')
+      .select('*, daycare:daycares!daycare_id(stripe_account_id, stripe_onboarding_complete), parent:profiles!parent_id(id, email, first_name, last_name, stripe_customer_id)')
       .eq('id', invoiceId)
       .single();
+    if (!invoice) throw new HttpError(404, 'Invoice not found.');
 
-    if (!invoice) return new Response('Invoice not found', { status: 404 });
+    const isAdmin = caller.profile.role === 'admin' && caller.profile.daycare_id === invoice.daycare_id;
+    const isParent = caller.user.id === invoice.parent_id;
+    if (!isAdmin && !isParent) throw new HttpError(403, 'Forbidden');
 
-    // Idempotency: if a Stripe invoice already exists for this row, return it
-    // rather than creating a duplicate (handles client retries / double-taps).
+    if (invoice.status === 'paid') throw new HttpError(409, 'This invoice has already been paid.');
+    if (invoice.status === 'void') throw new HttpError(409, 'This invoice was cancelled.');
+    if (invoice.status === 'draft' && !isAdmin) throw new HttpError(409, 'This invoice has not been issued yet.');
+
+    // Already in Stripe → just (re)open it.
     if (invoice.stripe_invoice_id) {
-      const existing = await stripe.invoices.retrieve(invoice.stripe_invoice_id);
-      return new Response(JSON.stringify({
-        stripeInvoiceId: existing.id,
-        hostedInvoiceUrl: existing.hosted_invoice_url,
-        idempotent: true,
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    // Authorize: caller must be an admin of this invoice's daycare
-    const { data: callerProfile } = await supabase.from('profiles')
-      .select('role, daycare_id')
-      .eq('id', user.id)
-      .single();
-
-    if (!callerProfile || callerProfile.role !== 'admin' || callerProfile.daycare_id !== invoice.daycare_id) {
-      return new Response('Forbidden', { status: 403 });
-    }
-
-    const stripeAccountId = (invoice as any).daycare?.stripe_account_id;
-    if (!stripeAccountId) {
-      return new Response('Daycare has not completed Stripe onboarding', { status: 400 });
-    }
-
-    // Resolve the parent's Stripe customer by the stored id (stable, tied to
-    // the user) — never by mutable email. Create + persist on first use.
-    const parent = (invoice as any).parent;
-    let customerId: string | undefined = parent?.stripe_customer_id;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: parent?.email,
-        name: `${parent?.first_name ?? ''} ${parent?.last_name ?? ''}`.trim(),
-        metadata: { supabase_uid: parent?.id ?? '' },
-      });
-      customerId = customer.id;
-      if (parent?.id) {
-        await supabase.from('profiles').update({ stripe_customer_id: customerId }).eq('id', parent.id);
+      let existing = await stripe.invoices.retrieve(invoice.stripe_invoice_id);
+      if (existing.status === 'paid') throw new HttpError(409, 'This invoice has already been paid.');
+      if (existing.status === 'void' || existing.status === 'uncollectible') {
+        throw new HttpError(409, 'This invoice can no longer be paid. Contact your daycare.');
       }
+      if (existing.status === 'draft') existing = await stripe.invoices.finalizeInvoice(existing.id);
+      return json({ stripeInvoiceId: existing.id, hostedInvoiceUrl: existing.hosted_invoice_url });
     }
 
-    // Validate that the line items actually sum to the invoice total before
-    // creating anything in Stripe — otherwise the displayed total and the
-    // platform fee (computed from amount_cents) would diverge.
-    const lineItemsForCheck = (invoice.line_items as Array<{ amount?: number }>) || [];
-    const lineSum = lineItemsForCheck.reduce((s, it) => s + (it.amount || 0), 0);
-    if (lineSum !== invoice.amount_cents) {
-      return new Response(
-        JSON.stringify({ error: `Line items ($${lineSum / 100}) do not sum to invoice total ($${invoice.amount_cents / 100}).` }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } },
+    const stripeAccountId = invoice.daycare?.stripe_account_id as string | undefined;
+    if (!stripeAccountId || !invoice.daycare?.stripe_onboarding_complete) {
+      throw new HttpError(
+        400,
+        isAdmin
+          ? 'Finish Stripe payout setup in Billing before sending invoices.'
+          : 'Your daycare has not enabled online payments yet. Please pay them directly.',
       );
     }
 
-    // Create Stripe Invoice (idempotencyKey guards against duplicate creation
-    // if this function is retried before the DB write below lands).
-    const stripeInvoice = await stripe.invoices.create({
-      customer: customerId,
-      collection_method: 'send_invoice',
-      days_until_due: 7,
-      metadata: { invoice_id: invoiceId, daycare_id: invoice.daycare_id },
-      application_fee_amount: Math.round(invoice.amount_cents * PLATFORM_FEE_PERCENT / 100),
-      transfer_data: { destination: stripeAccountId },
-    }, { idempotencyKey: `invoice-${invoiceId}` });
+    // Defence in depth on top of the DB trigger.
+    const lineItems = (invoice.line_items ?? []) as Array<{ description?: string; amount?: number }>;
+    const lineSum = lineItems.reduce((s, it) => s + (Number.isInteger(it.amount) ? (it.amount as number) : NaN), 0);
+    if (!lineItems.length || lineSum !== invoice.amount_cents || invoice.amount_cents <= 0) {
+      throw new HttpError(400, 'Invoice line items do not add up to the total.');
+    }
 
-    // Add line items
-    const lineItems = invoice.line_items as any[];
-    for (const item of lineItems) {
-      await stripe.invoiceItems.create({
+    const customerId = await getOrCreateCustomerFor(invoice.parent);
+
+    const dueTs = Math.floor(new Date(`${invoice.due_date}T23:59:59Z`).getTime() / 1000);
+    const days = Math.max(1, Math.min(90, Math.ceil((dueTs - Date.now() / 1000) / 86400)));
+
+    const stripeInvoice = await stripe.invoices.create(
+      {
         customer: customerId,
-        invoice: stripeInvoice.id,
-        amount: item.amount,
-        currency: 'usd',
-        description: item.description,
+        collection_method: 'send_invoice',
+        days_until_due: days,
+        auto_advance: false,
+        description: invoice.description,
+        metadata: { invoice_id: invoiceId, daycare_id: invoice.daycare_id },
+        application_fee_amount: Math.round((invoice.amount_cents * PLATFORM_FEE_PERCENT) / 100),
+        transfer_data: { destination: stripeAccountId },
+      },
+      { idempotencyKey: `invoice-${invoiceId}` },
+    );
+
+    for (let i = 0; i < lineItems.length; i++) {
+      await stripe.invoiceItems.create(
+        {
+          customer: customerId,
+          invoice: stripeInvoice.id,
+          amount: lineItems[i].amount as number,
+          currency: 'usd',
+          description: lineItems[i].description || invoice.description,
+        },
+        { idempotencyKey: `invoice-${invoiceId}-item-${i}` },
+      );
+    }
+
+    const finalized = await stripe.invoices.finalizeInvoice(stripeInvoice.id);
+    if (isAdmin) {
+      // Stripe emails the parent a hosted payment link.
+      await stripe.invoices.sendInvoice(stripeInvoice.id).catch((e) => console.warn('[create-invoice] sendInvoice', e));
+    }
+
+    // Service role writes the Stripe link (clients can't — migration 014).
+    await admin
+      .from('invoices')
+      .update({ stripe_invoice_id: stripeInvoice.id, status: 'pending' })
+      .eq('id', invoiceId);
+
+    if (isAdmin) {
+      await admin.from('notifications').insert({
+        user_id: invoice.parent_id,
+        daycare_id: invoice.daycare_id,
+        type: 'alert',
+        title: 'New Invoice',
+        body: `You have a new invoice for $${(invoice.amount_cents / 100).toFixed(2)}: ${invoice.description}`,
+        data: { invoice_id: invoiceId },
       });
     }
 
-    // Finalize and send
-    const finalizedInvoice = await stripe.invoices.finalizeInvoice(stripeInvoice.id);
-    await stripe.invoices.sendInvoice(stripeInvoice.id);
-
-    // Update our invoice with Stripe ID
-    await supabase.from('invoices').update({
-      stripe_invoice_id: stripeInvoice.id,
-      status: 'pending',
-    }).eq('id', invoiceId);
-
-    // Notify parent
-    await supabase.from('notifications').insert({
-      user_id: invoice.parent_id,
-      daycare_id: invoice.daycare_id,
-      type: 'alert',
-      title: 'New Invoice',
-      body: `You have a new invoice for $${(invoice.amount_cents / 100).toFixed(2)}: ${invoice.description}`,
-      data: { invoice_id: invoiceId },
-    });
-
-    return new Response(JSON.stringify({
-      stripeInvoiceId: stripeInvoice.id,
-      hostedInvoiceUrl: finalizedInvoice.hosted_invoice_url,
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return json({ stripeInvoiceId: stripeInvoice.id, hostedInvoiceUrl: finalized.hosted_invoice_url });
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500 });
+    return errorResponse('create-invoice', err);
   }
 });

@@ -1,106 +1,84 @@
-// Supabase Edge Function: Send Push Notifications via Expo
-// Triggered by database webhooks when new notifications are created
+// Supabase Edge Function: deliver a push notification for an existing row in
+// `notifications` via Expo.
+//
+// Callers: (a) the database webhook on notifications INSERT (shared secret), or
+// (b) an authenticated caregiver/admin. In both cases the title/body/target are
+// read from the DATABASE row, not from the request body, so a caller cannot
+// push arbitrary text (phishing) to arbitrary users. Staff callers may only
+// trigger pushes for notifications inside their own daycare.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { admin, requireCaller } from '../_shared/auth.ts';
+import { errorResponse, HttpError, json, preflight, readJson, safeEqual } from '../_shared/http.ts';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
-
-interface PushMessage {
-  to: string;
-  title: string;
-  body: string;
-  data?: Record<string, any>;
-  sound?: string;
-  priority?: 'default' | 'normal' | 'high';
-  channelId?: string;
-}
-
 serve(async (req) => {
+  const pre = preflight(req);
+  if (pre) return pre;
+
   try {
-    // Authorize the request: it must come from EITHER an internal Supabase
-    // webhook (carrying the shared secret) OR an authenticated staff user.
-    // Anything else is rejected — never send pushes for an unauthenticated caller.
     const webhookSecret = Deno.env.get('PUSH_WEBHOOK_SECRET');
-    const providedSecret = req.headers.get('x-webhook-secret');
-    const isInternalWebhook = !!webhookSecret && providedSecret === webhookSecret;
+    const provided = req.headers.get('x-webhook-secret');
+    const isInternal = !!webhookSecret && !!provided && safeEqual(provided, webhookSecret);
 
-    if (!isInternalWebhook) {
-      const authHeader = req.headers.get('Authorization');
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    let callerDaycare: string | null = null;
+    if (!isInternal) {
+      const caller = await requireCaller(req);
+      if (!['caregiver', 'admin'].includes(caller.profile.role) || !caller.profile.daycare_id) {
+        throw new HttpError(403, 'Staff only.');
       }
-      // Verify the JWT for a client-initiated call
-      const token = authHeader.replace('Bearer ', '');
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-      }
-      // Verify caller is staff (caregiver or admin)
-      const { data: callerProfile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-      if (!callerProfile || !['caregiver', 'admin'].includes(callerProfile.role)) {
-        return new Response(JSON.stringify({ error: 'Forbidden: staff only' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
-      }
+      callerDaycare = caller.profile.daycare_id;
     }
 
-    const { record } = await req.json();
+    const { record } = await readJson<{ record?: { id?: string } }>(req);
+    if (!record?.id || typeof record.id !== 'string') throw new HttpError(400, 'record.id is required.');
 
-    if (!record?.user_id) {
-      return new Response('Missing user_id', { status: 400 });
-    }
-
-    // Get user's push token
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .eq('id', record.user_id)
+    const { data: notification } = await admin
+      .from('notifications')
+      .select('id, user_id, daycare_id, type, title, body, data')
+      .eq('id', record.id)
       .single();
+    if (!notification) throw new HttpError(404, 'Notification not found.');
+    if (callerDaycare && notification.daycare_id !== callerDaycare) throw new HttpError(403, 'Forbidden');
 
-    if (!profile?.push_token) {
-      return new Response(JSON.stringify({ skipped: 'No push token' }), { status: 200 });
-    }
+    // Claim the notification: whichever caller (DB webhook or client) gets here
+    // first sends it; the other becomes a no-op.
+    const { data: claimed } = await admin
+      .from('notifications')
+      .update({ push_sent_at: new Date().toISOString() })
+      .eq('id', notification.id)
+      .is('push_sent_at', null)
+      .select('id');
+    if (!claimed || claimed.length === 0) return json({ skipped: 'Already delivered' });
 
-    // Determine priority based on notification type
-    const isUrgent = record.type === 'incident' || record.type === 'alert';
+    const { data: target } = await admin.from('profiles').select('push_token').eq('id', notification.user_id).single();
+    if (!target?.push_token) return json({ skipped: 'No push token' });
 
-    const message: PushMessage = {
-      to: profile.push_token,
-      title: record.title,
-      body: record.body,
-      data: record.data || {},
-      sound: isUrgent ? 'default' : undefined,
-      priority: isUrgent ? 'high' : 'default',
-      channelId: isUrgent ? 'urgent' : 'default',
-    };
-
-    // Send via Expo Push API
+    const urgent = notification.type === 'incident' || notification.type === 'alert';
     const response = await fetch(EXPO_PUSH_URL, {
       method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(message),
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: target.push_token,
+        title: notification.title,
+        body: notification.body,
+        data: notification.data ?? {},
+        sound: urgent ? 'default' : undefined,
+        priority: urgent ? 'high' : 'default',
+        channelId: urgent ? 'urgent' : 'default',
+      }),
     });
+    const result = await response.json().catch(() => null);
 
-    const result = await response.json();
+    // Expo reports dead tokens per-ticket; clear them so we stop sending.
+    const ticket = result?.data;
+    if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered') {
+      await admin.from('profiles').update({ push_token: null }).eq('id', notification.user_id);
+    }
 
-    return new Response(JSON.stringify({ sent: true, result }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return json({ sent: ticket?.status === 'ok' });
   } catch (err) {
-    console.error('Push notification error:', err);
-    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500 });
+    return errorResponse('send-push', err);
   }
 });

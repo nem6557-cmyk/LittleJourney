@@ -1,101 +1,41 @@
-// Supabase Edge Function: Detach (remove) a Stripe Payment Method
-// Removes a saved payment method from the authenticated user's Stripe customer
+// Supabase Edge Function: remove a saved card.
+// Ownership is checked against the customer stored on the caller's profile, and
+// the last card is protected while a subscription is still billing it.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
-
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2023-10-16' });
-
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-);
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireCaller } from '../_shared/auth.ts';
+import { errorResponse, HttpError, json, preflight, readJson } from '../_shared/http.ts';
+import { existingCustomerId, stripe } from '../_shared/stripe.ts';
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  const pre = preflight(req);
+  if (pre) return pre;
 
   try {
-    // Verify auth
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const caller = await requireCaller(req);
+    const { paymentMethodId } = await readJson<{ paymentMethodId?: string }>(req);
+    if (!paymentMethodId || typeof paymentMethodId !== 'string' || !paymentMethodId.startsWith('pm_')) {
+      throw new HttpError(400, 'paymentMethodId is required.');
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const customerId = existingCustomerId(caller);
+    if (!customerId) throw new HttpError(404, 'No payment methods on file.');
 
-    // Parse request body
-    const { paymentMethodId } = await req.json();
-    if (!paymentMethodId || typeof paymentMethodId !== 'string') {
-      return new Response(JSON.stringify({ error: 'paymentMethodId is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Verify the payment method belongs to this user's Stripe customer
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile?.email) {
-      return new Response(JSON.stringify({ error: 'User profile not found' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const customers = await stripe.customers.list({ email: profile.email, limit: 1 });
-    if (customers.data.length === 0) {
-      return new Response(JSON.stringify({ error: 'No Stripe customer found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Retrieve the payment method and verify it belongs to this customer
     const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
-    if (pm.customer !== customers.data[0].id) {
-      return new Response(JSON.stringify({ error: 'Payment method does not belong to this user' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (pm.customer !== customerId) throw new HttpError(403, 'That payment method is not yours.');
+
+    const [cards, subs] = await Promise.all([
+      stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 20 }),
+      stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 }),
+    ]);
+    const billing = subs.data.some((s) => ['active', 'trialing', 'past_due'].includes(s.status));
+    if (billing && cards.data.length <= 1) {
+      throw new HttpError(409, 'Add another card before removing your only one — your subscription still needs it.');
     }
 
-    // Detach the payment method
     await stripe.paymentMethods.detach(paymentMethodId);
-
-    return new Response(
-      JSON.stringify({ success: true }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
-    );
+    return json({ success: true });
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return errorResponse('detach-payment-method', err);
   }
 });

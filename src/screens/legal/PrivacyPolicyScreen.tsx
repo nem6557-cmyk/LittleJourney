@@ -31,7 +31,7 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ onClos
 
       <Text style={styles.sectionTitle}>1. Information We Collect</Text>
       <Text style={styles.body}>
-        LittleJourney collects information necessary to provide childcare communication services. This includes account information (name, email, role), child information entered by parents, guardians, administrators, or caregivers (name, date of birth, classroom, allergies, medical notes, emergency contacts, authorized pickups), activity data (meals, naps, attendance, incidents, milestones), photos, messages, push notification tokens, and app diagnostics.
+        LittleJourney collects information necessary to provide childcare communication services. This includes account information (name, email, role), child information entered by parents, guardians, administrators, or caregivers (name, date of birth, classroom, allergies, medical notes, emergency contacts, authorized pickups), activity data (meals, naps, attendance, incidents, milestones), photos, messages, push notification tokens, payment records (invoice amounts, status and dates), and app diagnostics. Card numbers are entered only on Stripe-hosted payment pages and are never stored on our servers.
       </Text>
 
       <Text style={styles.sectionTitle}>2. Children's Privacy</Text>
@@ -61,7 +61,7 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ onClos
 
       <Text style={styles.sectionTitle}>7. Data Retention & Deletion</Text>
       <Text style={styles.body}>
-        Account data is retained while your account is active. You can request export or deletion through Profile {'>'} Privacy {'>'} Data Management. Account-level data is deleted within the published support timeline after a verified request. Daycare records, child activity logs, incident records, attendance records, invoices, and photos may also be controlled by the daycare operator and may be retained where required for childcare operations, legal obligations, dispute resolution, payment records, backup integrity, or safety documentation.
+        Account data is retained while your account is active. You can request export or deletion through Profile {'>'} Download My Data (export and account deletion). Account-level data is deleted within the published support timeline after a verified request. Daycare records, child activity logs, incident records, attendance records, invoices, and photos may also be controlled by the daycare operator and may be retained where required for childcare operations, legal obligations, dispute resolution, payment records, backup integrity, or safety documentation. When you delete your account we cancel any subscription, remove saved cards, and delete your profile, messages and notifications; Stripe customer and invoice records are retained for tax and financial record-keeping.
       </Text>
 
       <Text style={styles.sectionTitle}>8. Your Rights</Text>
