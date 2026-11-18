@@ -173,7 +173,7 @@ export const DaycareOnboardingScreen: React.FC = () => {
         <Ionicons name="gift-outline" size={24} color={Colors.primary} />
         <View style={{ flex: 1 }}>
           <Text style={styles.trialTitle}>14-Day Free Trial</Text>
-          <Text style={styles.trialDesc}>No credit card required. All features included.</Text>
+          <Text style={styles.trialDesc}>No credit card needed to start. Choose a plan on the web any time before it ends.</Text>
         </View>
       </View>
 

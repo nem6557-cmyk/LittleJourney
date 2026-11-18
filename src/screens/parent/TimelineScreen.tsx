@@ -100,24 +100,22 @@ export const TimelineScreen = () => {
   const firstName = currentUser.name.split(' ')[0];
   const childInitial = selectedChild.firstName.charAt(0);
 
-  // Derive caregiver from actual timeline entries
-  const latestCaregiverEntry = useMemo(() => {
+  // The "note from the caregiver" card only ever shows a REAL caregiver-written
+  // description (never a placeholder), attributed to the person who wrote it.
+  const caregiverNoteEntry = useMemo(() => {
     return timelineEntries
-      .filter((e) => e.childId === selectedChild.id && e.createdBy.role === 'caregiver')
+      .filter(
+        (e) =>
+          e.childId === selectedChild.id &&
+          e.createdBy.role === 'caregiver' &&
+          !!e.description &&
+          e.description.length > 30,
+      )
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
   }, [timelineEntries, selectedChild.id]);
-  const caregiverName = latestCaregiverEntry?.createdBy.name || 'Caregiver';
+  const caregiverName = caregiverNoteEntry?.createdBy.name || 'Caregiver';
   const caregiverInitial = caregiverName.replace(/^(Ms\.|Mr\.|Mrs\.|Dr\.)\s*/, '').charAt(0);
-
-  const latestNote = useMemo(() => {
-    const allEntries = timelineEntries
-      .filter((e) => e.childId === selectedChild.id)
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    const withDesc = allEntries.find(
-      (e) => e.description && e.description.length > 30 && e.createdBy.role === 'caregiver'
-    );
-    return withDesc?.description || `${selectedChild.firstName} is having a great day!`;
-  }, [timelineEntries, selectedChild]);
+  const latestNote = caregiverNoteEntry?.description ?? null;
 
   /**
    * Upload photo URIs to Supabase Storage. Returns the public URLs that
@@ -342,21 +340,23 @@ export const TimelineScreen = () => {
         </View>
       )}
 
-      {/* Caregiver Note */}
-      <View style={styles.caregiverNote}>
-        <View style={[styles.caregiverNoteCard, Shadows.small]}>
-          <View style={styles.caregiverHeader}>
-            <View style={styles.caregiverAvatar}>
-              <Text style={styles.caregiverAvatarText}>{caregiverInitial}</Text>
+      {/* Caregiver Note — only when a caregiver actually wrote one */}
+      {latestNote && (
+        <View style={styles.caregiverNote}>
+          <View style={[styles.caregiverNoteCard, Shadows.small]}>
+            <View style={styles.caregiverHeader}>
+              <View style={styles.caregiverAvatar}>
+                <Text style={styles.caregiverAvatarText}>{caregiverInitial}</Text>
+              </View>
+              <View>
+                <Text style={styles.caregiverName}>{caregiverName}</Text>
+                <Text style={styles.caregiverRole}>Caregiver{selectedChild.classroom ? `, ${selectedChild.classroom}` : ''}</Text>
+              </View>
             </View>
-            <View>
-              <Text style={styles.caregiverName}>{caregiverName}</Text>
-              <Text style={styles.caregiverRole}>Lead Teacher, {selectedChild.classroom || 'Classroom'}</Text>
-            </View>
+            <Text style={styles.caregiverMessage}>"{latestNote}"</Text>
           </View>
-          <Text style={styles.caregiverMessage}>"{latestNote}"</Text>
         </View>
-      </View>
+      )}
 
       {/* Child selector (parents with multiple children) */}
       {currentRole === 'parent' && children.length > 1 && (

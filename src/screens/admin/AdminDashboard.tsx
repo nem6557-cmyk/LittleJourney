@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { getSubscriptionStatus } from '../../lib/stripe';
+import { summarizeSubscription } from '../../lib/billing';
 
 type AdminNavigation = { navigate: (screen: string) => void; goBack: () => void };
 
@@ -14,21 +16,32 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
   const { children, attendance, timelineEntries } = useApp();
   const { profile, daycare } = useAuth();
 
-  const daycareName = daycare?.name || (profile?.daycare_id ? 'Your Daycare' : 'Little Journey');
+  const daycareName = daycare?.name || 'Little Journey';
+
+  // Trial / payment status banner so a lapsed trial or failed payment is never a surprise.
+  const [subSummary, setSubSummary] = useState<ReturnType<typeof summarizeSubscription> | null>(null);
+  useEffect(() => {
+    const id = profile?.daycare_id ?? daycare?.id;
+    if (!id) return;
+    let cancelled = false;
+    // No row usually means the lookup failed — stay quiet rather than alarm the admin.
+    getSubscriptionStatus(id).then((s) => { if (!cancelled && s) setSubSummary(summarizeSubscription(s)); });
+    return () => { cancelled = true; };
+  }, [profile?.daycare_id, daycare?.id]);
+  const showBanner = !!subSummary && (subSummary.needsPlan || subSummary.tone === 'warn' || subSummary.tone === 'bad');
   const presentToday = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;
   const totalChildren = children.length;
   const todayEntries = timelineEntries.filter(
     (e) => new Date(e.timestamp).toDateString() === new Date().toDateString()
   ).length;
 
-  // Only screens that are actually registered in AdminNavigator carry a `screen`.
-  // Items without one are not yet built and show a Coming Soon notice.
   const managementItems = [
     { icon: 'people' as const, label: 'Manage Children', desc: `${totalChildren} enrolled`, color: Colors.primary, screen: 'ManageChildren' },
     { icon: 'person-add' as const, label: 'Manage Staff', desc: 'Caregivers & teachers', color: Colors.info, screen: 'ManageStaff' },
     { icon: 'key' as const, label: 'Invite Codes', desc: 'Invite parents & staff', color: Colors.accent, screen: 'InviteCodes' },
     { icon: 'grid' as const, label: 'Classrooms', desc: 'Rooms & assignments', color: Colors.success, screen: 'ManageClassrooms' },
     { icon: 'calendar' as const, label: 'Calendar', desc: 'Events & closures', color: Colors.accent, screen: 'ManageCalendar' },
+    { icon: 'card' as const, label: 'Billing & Payments', desc: 'Plan, tuition invoices, payouts', color: Colors.secondary, screen: 'Billing' },
   ];
 
   const quickActions = [
@@ -38,21 +51,8 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
     { icon: 'document-text-outline' as const, label: 'Generate Report', color: Colors.info, screen: 'GenerateReport' },
   ];
 
-  const handleManagementTap = (screen: string | null) => {
-    if (screen && navigation) {
-      navigation.navigate(screen);
-    } else {
-      Alert.alert('Coming Soon', 'This management screen will be available in a future update.');
-    }
-  };
-
-  const handleQuickAction = (action: { label: string; screen: string | null }) => {
-    if (action.screen && navigation) {
-      navigation.navigate(action.screen);
-      return;
-    }
-    Alert.alert(action.label, 'This feature will be available in a future update.');
-  };
+  const handleManagementTap = (screen: string) => navigation?.navigate(screen);
+  const handleQuickAction = (action: { screen: string }) => navigation?.navigate(action.screen);
 
   return (
     <View style={styles.container}>
@@ -101,6 +101,21 @@ export const AdminDashboard = ({ navigation }: { navigation?: AdminNavigation })
         </LinearGradient>
 
         <View style={styles.content}>
+          {showBanner && subSummary && (
+            <TouchableOpacity
+              style={[styles.banner, { borderLeftColor: subSummary.tone === 'bad' ? Colors.danger : Colors.warning }]}
+              onPress={() => navigation?.navigate('Billing')}
+              accessibilityRole="button"
+              accessibilityLabel={`${subSummary.headline}. ${subSummary.detail} Open billing`}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bannerTitle}>{subSummary.headline}</Text>
+                <Text style={styles.bannerText}>{subSummary.detail}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+
           {/* Quick Actions */}
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.quickActionsGrid}>
@@ -179,6 +194,9 @@ const styles = StyleSheet.create({
   statValue: { fontSize: FontSizes.xxl, color: Colors.white, fontWeight: '800' },
   statLabel: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
   content: { padding: Spacing.lg },
+  banner: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, borderLeftWidth: 4, marginBottom: Spacing.sm, ...Shadows.small },
+  bannerTitle: { fontSize: FontSizes.md, fontWeight: '800', color: Colors.textPrimary },
+  bannerText: { fontSize: FontSizes.sm, color: Colors.textSecondary, marginTop: 2 },
   sectionTitle: { fontSize: FontSizes.lg, fontWeight: '700', color: Colors.textPrimary, marginTop: Spacing.lg, marginBottom: Spacing.md },
   quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   quickAction: { width: '48%', flexGrow: 1, backgroundColor: Colors.card, borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center', gap: Spacing.sm },

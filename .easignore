@@ -62,3 +62,4 @@ docs/
 # IDE
 .vscode/
 .idea/
+play-service-account.json

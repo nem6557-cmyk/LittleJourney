@@ -119,43 +119,121 @@ export function isParentFeatureEnabled(
   return PARENT_FEATURES[plan]?.[feature] ?? false;
 }
 
+function defaultReturnUrl(path: string): string {
+  return Platform.OS === 'web' && typeof window !== 'undefined'
+    ? `${window.location.origin}/${path}`
+    : `littlejourney://${path}`;
+}
+
+async function openUrl(url: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    window.location.href = url;
+  } else {
+    await Linking.openURL(url);
+  }
+}
+
+/** Pull a human-readable message out of a supabase.functions.invoke() error. */
+async function functionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  try {
+    const ctx = (error as { context?: Response })?.context;
+    if (ctx && typeof ctx.json === 'function') {
+      const body = await ctx.json();
+      if (body?.error && typeof body.error === 'string') return body.error;
+    }
+  } catch {
+    // body already consumed / not JSON
+  }
+  return fallback;
+}
+
+export type BillingResult = { ok: true } | { ok: false; error: string };
+
 /**
- * Create a Stripe Checkout Session via the create-checkout edge function.
- * Opens the Stripe-hosted checkout page in the browser.
- * Returns the session URL or null on failure.
+ * Start Stripe Checkout for a DAYCARE plan (admin only; the server derives the
+ * daycare from the caller). Web only — see canPurchaseSubscriptionHere().
  */
 export async function createCheckoutSession(params: {
-  plan: 'starter' | 'professional' | 'enterprise' | 'parent_premium';
-  daycareId: string;
+  plan: 'starter' | 'professional' | 'enterprise';
   returnUrl?: string;
-}): Promise<string | null> {
+}): Promise<BillingResult> {
   try {
-    const defaultReturnUrl = Platform.OS === 'web'
-      ? `${window.location.origin}/payment-success`
-      : 'littlejourney://payment-success';
-
     const { data, error } = await supabase.functions.invoke('create-checkout', {
-      body: {
-        plan: params.plan,
-        daycareId: params.daycareId,
-        returnUrl: params.returnUrl || defaultReturnUrl,
-      },
+      body: { plan: params.plan, returnUrl: params.returnUrl || defaultReturnUrl('payment-success') },
     });
-
-    if (error) throw error;
-    if (!data?.url) throw new Error('No checkout URL returned');
-
-    // Open the Stripe Checkout page
-    if (Platform.OS === 'web') {
-      window.location.href = data.url;
-    } else {
-      await Linking.openURL(data.url);
-    }
-
-    return data.url;
+    if (error) return { ok: false, error: await functionErrorMessage(error, 'Could not start checkout. Please try again.') };
+    if (!data?.url) return { ok: false, error: 'No checkout URL returned.' };
+    await openUrl(data.url);
+    return { ok: true };
   } catch (err) {
     console.error('[Stripe] Checkout session error:', err);
+    return { ok: false, error: 'Could not start checkout. Please try again.' };
+  }
+}
+
+/** Open the Stripe Customer Portal (change plan / update card / cancel). */
+export async function openBillingPortal(returnUrl?: string): Promise<BillingResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke('create-billing-portal', {
+      body: { returnUrl: returnUrl || defaultReturnUrl('billing-return') },
+    });
+    if (error) return { ok: false, error: await functionErrorMessage(error, 'Could not open billing. Please try again.') };
+    if (!data?.url) return { ok: false, error: 'No billing link returned.' };
+    await openUrl(data.url);
+    return { ok: true };
+  } catch (err) {
+    console.error('[Stripe] Billing portal error:', err);
+    return { ok: false, error: 'Could not open billing. Please try again.' };
+  }
+}
+
+export interface ConnectStatus {
+  accountId: string | null;
+  onboardingComplete: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+}
+
+/** Current Stripe Connect payout-onboarding state for the admin's daycare. */
+export async function getConnectStatus(): Promise<ConnectStatus | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('create-connect', { body: { action: 'status' } });
+    if (error || !data) return null;
+    return data as ConnectStatus;
+  } catch {
     return null;
+  }
+}
+
+/** Open Stripe-hosted onboarding (or the Express dashboard once complete). */
+export async function openConnect(action: 'onboard' | 'dashboard'): Promise<BillingResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke('create-connect', {
+      body: { action, returnUrl: defaultReturnUrl('connect-success') },
+    });
+    if (error) return { ok: false, error: await functionErrorMessage(error, 'Could not open Stripe. Please try again.') };
+    const url = data?.onboardingUrl ?? data?.url;
+    if (!url) return { ok: false, error: 'No link returned.' };
+    await openUrl(url);
+    return { ok: true };
+  } catch (err) {
+    console.error('[Stripe] Connect error:', err);
+    return { ok: false, error: 'Could not open Stripe. Please try again.' };
+  }
+}
+
+/** Ask the server to (create and) open the hosted payment page for an invoice. */
+export async function openInvoicePayment(invoiceId: string): Promise<BillingResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke('create-invoice', { body: { invoiceId } });
+    if (error) return { ok: false, error: await functionErrorMessage(error, 'Could not start payment. Please try again.') };
+    const url = (data as { hostedInvoiceUrl?: string } | null)?.hostedInvoiceUrl;
+    if (!url) return { ok: false, error: 'No payment link was returned for this invoice.' };
+    await openUrl(url);
+    return { ok: true };
+  } catch (err) {
+    console.error('[Stripe] Invoice payment error:', err);
+    return { ok: false, error: 'Could not open the payment page.' };
   }
 }
 

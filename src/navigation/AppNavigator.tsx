@@ -40,6 +40,7 @@ import { ManageClassroomsScreen } from '../screens/admin/ManageClassroomsScreen'
 import { ManageCalendarScreen } from '../screens/admin/ManageCalendarScreen';
 import { SendAnnouncementScreen } from '../screens/admin/SendAnnouncementScreen';
 import { GenerateReportScreen } from '../screens/admin/GenerateReportScreen';
+import { BillingScreen } from '../screens/admin/BillingScreen';
 
 const Tab = createBottomTabNavigator();
 const AuthStack = createStackNavigator();
@@ -88,6 +89,7 @@ const AdminNavigator = () => (
     <AdminStack.Screen name="ManageCalendar" component={ManageCalendarScreen} />
     <AdminStack.Screen name="SendAnnouncement" component={SendAnnouncementScreen} />
     <AdminStack.Screen name="GenerateReport" component={GenerateReportScreen} />
+    <AdminStack.Screen name="Billing" component={BillingScreen} />
   </AdminStack.Navigator>
 );
 
@@ -197,6 +199,7 @@ const linking: any = {
           ManageChildren: 'admin/children',
           ManageStaff: 'admin/staff',
           InviteCodes: 'admin/invites',
+          Billing: 'admin/billing',
         },
       },
     },

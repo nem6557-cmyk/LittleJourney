@@ -20,7 +20,13 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
     // Verify user auth
-    const authHeader = req.headers.get('Authorization')!;
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     const supabaseUser = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -96,6 +102,28 @@ serve(async (req) => {
       .eq('user_id', user.id);
     deletionLog.push('Notifications cleared');
 
+    // ── Billing cleanup (every role) ──
+    // Stop all recurring charges and remove saved cards. The Stripe customer
+    // object and past invoices are retained for tax/financial record-keeping,
+    // as stated in the Privacy Policy.
+    if (stripe && profile.stripe_customer_id) {
+      try {
+        const subs = await stripe.subscriptions.list({ customer: profile.stripe_customer_id, status: 'all', limit: 20 });
+        for (const sub of subs.data) {
+          if (['active', 'trialing', 'past_due', 'unpaid'].includes(sub.status)) {
+            await stripe.subscriptions.cancel(sub.id);
+          }
+        }
+        const cards = await stripe.paymentMethods.list({ customer: profile.stripe_customer_id, type: 'card', limit: 20 });
+        for (const card of cards.data) await stripe.paymentMethods.detach(card.id);
+        deletionLog.push('Stripe subscriptions cancelled and saved cards removed');
+      } catch (err) {
+        // Don't strand the user: log for follow-up and continue with deletion.
+        console.error('[data-deletion] Stripe cleanup failed', profile.stripe_customer_id, err);
+        deletionLog.push('Billing cleanup needs manual follow-up');
+      }
+    }
+
     if (profile.role === 'parent') {
       // Remove parent-child links
       await supabase
@@ -162,6 +190,21 @@ serve(async (req) => {
 
       if (!otherAdmins || otherAdmins.length === 0) {
         deletionLog.push('WARNING: No other admins found. Daycare may need ownership transfer.');
+        // Nobody is left to manage billing — stop charging the daycare.
+        const { data: daycareSub } = await supabase
+          .from('subscriptions')
+          .select('stripe_subscription_id')
+          .eq('daycare_id', profile.daycare_id)
+          .maybeSingle();
+        const sid = (daycareSub as { stripe_subscription_id?: string } | null)?.stripe_subscription_id;
+        if (stripe && sid) {
+          try {
+            await stripe.subscriptions.cancel(sid);
+            deletionLog.push('Daycare subscription cancelled (no remaining admin)');
+          } catch (err) {
+            console.error('[data-deletion] Failed to cancel daycare subscription', sid, err);
+          }
+        }
       }
     }
 
@@ -182,19 +225,29 @@ serve(async (req) => {
     }
 
     // Delete the profile
-    await supabase
+    const { error: profileDeleteError } = await supabase
       .from('profiles')
       .delete()
       .eq('id', user.id);
+    if (profileDeleteError) {
+      console.error('[data-deletion] profile delete failed', profileDeleteError);
+      return new Response(
+        JSON.stringify({ error: 'We could not finish deleting your account. Please contact support@littlejourney.app.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
     deletionLog.push('Profile deleted');
 
     // Finally delete the auth user
     const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(user.id);
     if (deleteAuthError) {
-      deletionLog.push(`Auth deletion error: ${deleteAuthError.message}`);
-    } else {
-      deletionLog.push('Auth account deleted');
+      console.error('[data-deletion] auth delete failed', deleteAuthError);
+      return new Response(
+        JSON.stringify({ error: 'We could not finish deleting your account. Please contact support@littlejourney.app.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
+    deletionLog.push('Auth account deleted');
 
     return new Response(
       JSON.stringify({
@@ -208,7 +261,8 @@ serve(async (req) => {
       }
     );
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('[data-deletion] unexpected error', error);
+    return new Response(JSON.stringify({ error: 'Something went wrong. Please try again.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

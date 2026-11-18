@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef, ReactNode } from 'react';
-import { Alert, Share, Platform, Linking } from 'react-native';
+import { Alert, Share, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   UserRole, User, TimelineEntry, Message, Child, MoodType, Conversation,
@@ -21,6 +21,8 @@ import { notificationsService } from '../services/notifications.service';
 import { authorizedPickupsService } from '../services/authorized-pickups.service';
 import { registerForPushNotifications, dispatchPushNotification } from '../lib/notifications';
 import { onNetworkChange, processPendingMutations } from '../lib/offline';
+import { openInvoicePayment } from '../lib/stripe';
+import { effectiveInvoiceStatus } from '../lib/billing';
 
 interface AppContextType {
   // Auth / role
@@ -423,7 +425,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             .select('*')
             .eq('parent_id', profile.id);
 
-          if (!cancelled && invoiceData && invoiceData.length > 0) {
+          // Always apply the server result (even when empty) so voided/removed
+          // invoices don't linger from the offline cache.
+          if (!cancelled && invoiceData) {
             const mappedInvoices: Invoice[] = invoiceData.map((inv: any) => ({
               id: inv.id,
               childId: inv.child_id,
@@ -431,7 +435,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               amount: inv.amount_cents / 100,
               dueDate: inv.due_date,
               paidDate: inv.paid_at || undefined,
-              status: inv.status as Invoice['status'],
+              // A pending invoice past its due date is overdue regardless of cron timing.
+              status: effectiveInvoiceStatus(inv.status, inv.due_date),
               items: Array.isArray(inv.line_items) ? inv.line_items : [],
             }));
             setInvoices(mappedInvoices);
@@ -1087,21 +1092,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
           for (const recipientId of recipientIds) {
             if (recipientId === auth.profile?.id) continue; // don't notify the sender
-            await supabase.from('notifications').insert({
+            const { data: inserted } = await supabase.from('notifications').insert({
               user_id: recipientId,
               daycare_id: auth.profile!.daycare_id!,
               type: notif.type as any,
               title: notif.title,
               body: notif.body,
               data: notif.childId ? { childId: notif.childId } : {},
-            } as any);
-            dispatchPushNotification({
-              user_id: recipientId,
-              title: notif.title,
-              body: notif.body,
-              type: notif.type,
-              data: notif.childId ? { childId: notif.childId } : {},
-            });
+            } as any).select('id').single();
+            if (inserted?.id) {
+              dispatchPushNotification({ id: inserted.id });
+            }
           }
         } catch (err) {
           console.warn('[AppContext] Failed to dispatch notification:', err);
@@ -1473,24 +1474,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // The invoice is marked 'paid' ONLY by the stripe-webhook (server-side) once
   // money actually moves — never client-side.
   const payInvoice = useCallback(async (invoiceId: string): Promise<{ error: string | null }> => {
-    try {
-      const { data, error } = await supabase.functions.invoke('create-invoice', {
-        body: { invoiceId },
-      });
-      if (error) {
-        console.warn('[AppContext] create-invoice failed:', error);
-        return { error: 'Could not start payment. Please try again.' };
-      }
-      const url = (data as { hostedInvoiceUrl?: string } | null)?.hostedInvoiceUrl;
-      if (!url) {
-        return { error: 'No payment link was returned for this invoice.' };
-      }
-      await Linking.openURL(url);
-      return { error: null };
-    } catch (err) {
-      console.warn('[AppContext] payInvoice error:', err);
-      return { error: 'Could not open the payment page.' };
-    }
+    const result = await openInvoicePayment(invoiceId);
+    return { error: result.ok === true ? null : result.error };
   }, []);
 
   // ── Dynamic report generation ──

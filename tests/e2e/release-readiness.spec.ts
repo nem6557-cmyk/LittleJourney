@@ -17,6 +17,29 @@ test.describe('release readiness', () => {
     await expect(page.getByRole('link', { name: 'support@littlejourney.app' })).toBeVisible();
   });
 
+  test('serves the account-deletion page required by Google Play', async ({ page }) => {
+    await page.goto('/delete-account.html');
+    await expect(page).toHaveTitle(/Delete Your Account/);
+    await expect(page.getByRole('heading', { name: 'Delete Your Account' })).toBeVisible();
+    await expect(page.getByText('Delete My Account').first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'privacy@littlejourney.app' })).toBeVisible();
+  });
+
+  test('serves an installable PWA manifest with real icons (Microsoft Store)', async ({ request }) => {
+    const res = await request.get('/manifest.json');
+    expect(res.ok()).toBe(true);
+    const manifest = await res.json();
+    expect(manifest.name).toBeTruthy();
+    expect(manifest.start_url).toBe('/');
+    const purposes = manifest.icons.map((i: { purpose: string }) => i.purpose);
+    expect(purposes).toEqual(expect.arrayContaining(['any', 'maskable']));
+    for (const icon of manifest.icons) {
+      const img = await request.get(icon.src);
+      expect(img.ok()).toBe(true);
+      expect(img.headers()['content-type']).toContain('image/png');
+    }
+  });
+
   test('keeps the login form inside the mobile viewport', async ({ page }, testInfo) => {
     test.skip(!testInfo.project.name.includes('mobile'), 'mobile-only layout smoke test');
 

@@ -28,6 +28,7 @@ export const invoicesService = {
     daycare_id: string; parent_id: string; child_id: string;
     amount_cents: number; due_date: string; description: string;
     line_items: { description: string; amount: number }[];
+    status?: 'draft' | 'pending';
   }) => {
     const { data, error } = await supabase
       .from('invoices')
@@ -36,6 +37,26 @@ export const invoicesService = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  /** Parents/guardians linked to a child (for choosing who to bill). Admin-scoped by RLS. */
+  getChildBillingParents: async (childId: string) => {
+    const { data, error } = await supabase
+      .from('parent_children')
+      .select('parent_id, relationship, parent:profiles!parent_id(first_name, last_name, email)')
+      .eq('child_id', childId);
+    if (error) throw error;
+    return (data ?? []) as unknown as Array<{
+      parent_id: string;
+      relationship: string;
+      parent: { first_name: string; last_name: string; email: string } | null;
+    }>;
+  },
+
+  /** Unsent invoices can be deleted; sent ones are immutable (DB policy + trigger). */
+  deleteUnsentInvoice: async (invoiceId: string) => {
+    const { error } = await supabase.from('invoices').delete().eq('id', invoiceId).is('stripe_invoice_id', null);
+    if (error) throw error;
   },
 
   updateInvoiceStatus: async (

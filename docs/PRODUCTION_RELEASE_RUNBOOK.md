@@ -37,7 +37,6 @@ Confirm production values before building:
 - `EXPO_PUBLIC_STRIPE_PRICE_STARTER`
 - `EXPO_PUBLIC_STRIPE_PRICE_PROFESSIONAL`
 - `EXPO_PUBLIC_STRIPE_PRICE_ENTERPRISE`
-- `EXPO_PUBLIC_STRIPE_PRICE_PARENT_PREMIUM`
 - `EXPO_PUBLIC_SENTRY_DSN`
 - `EXPO_PUBLIC_PRIVACY_URL=https://littlejourney.app/privacy.html`
 - `EXPO_PUBLIC_TERMS_URL=https://littlejourney.app/terms.html`

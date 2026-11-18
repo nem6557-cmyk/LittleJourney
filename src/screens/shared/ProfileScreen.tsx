@@ -9,21 +9,18 @@ import Constants from 'expo-constants';
 import { Colors, Shadows, BorderRadius, Spacing, FontSizes } from '../../theme/colors';
 import { getChildAge, formatDateShort } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
-import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { trackScreen } from '../../lib/analytics';
 import { authorizedPickupsService } from '../../services/authorized-pickups.service';
 import { inviteCodesService } from '../../services/invite-codes.service';
-import { PaymentMethodsScreen } from '../payments/PaymentMethodsScreen';
-import { SubscriptionScreen } from '../payments/SubscriptionScreen';
 
 const PREFS_STORAGE_KEY = '@littlejourney/user_preferences';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
 type SubScreen = null | 'child_profile' | 'family' | 'pickups' | 'health' | 'invoices' | 'invoice_detail' | 'notifications' | 'about'
-  | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'payment_methods' | 'subscription' | 'lesson_plans' | 'incidents';
+  | 'privacy' | 'language' | 'translation' | 'change_password' | 'download_data' | 'lesson_plans' | 'incidents';
 
 interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
@@ -39,7 +36,6 @@ interface MenuSection {
 
 export const ProfileScreen = () => {
   const { currentRole, switchRole, currentUser, selectedChild, showAlert, shareContent, invoices, payInvoice, logout, learningPlans, incidents, preferences, updatePreferences, refreshData } = useApp();
-  const { isDark, toggleTheme } = useTheme();
   const auth = useAuth();
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -48,7 +44,6 @@ export const ProfileScreen = () => {
   const [smartNotifs, setSmartNotifs] = useState(true);
   const [biometric, setBiometric] = useState(false);
   const [offlineMode, setOfflineMode] = useState(true);
-  const [paymentCard] = useState<{ type: string; last4: string } | null>(null);
 
   // Track screen view on mount (#34)
   useEffect(() => {
@@ -71,9 +66,6 @@ export const ProfileScreen = () => {
   const [autoTranslate, setAutoTranslate] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState('Spanish');
 
-  // Auto-pay
-  const [autoPayEnabled, setAutoPayEnabled] = useState(false);
-  const [autoPayDay, setAutoPayDay] = useState(1);
 
   // Load saved preferences from AsyncStorage on mount
   useEffect(() => {
@@ -94,8 +86,6 @@ export const ProfileScreen = () => {
           if (prefs.selectedLanguage) setSelectedLanguage(prefs.selectedLanguage);
           if (prefs.autoTranslate !== undefined) setAutoTranslate(prefs.autoTranslate);
           if (prefs.targetLanguage) setTargetLanguage(prefs.targetLanguage);
-          if (prefs.autoPayEnabled !== undefined) setAutoPayEnabled(prefs.autoPayEnabled);
-          if (prefs.autoPayDay !== undefined) setAutoPayDay(prefs.autoPayDay);
         }
       } catch {
         // Preferences are non-critical; fall back to defaults if load fails.
@@ -140,15 +130,13 @@ export const ProfileScreen = () => {
         smartNotifs, biometricEnabled: biometric, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
         photoSharing, classPhotos, analyticsSharing,
         selectedLanguage, autoTranslate, targetLanguage,
-        autoPayEnabled, autoPayDay,
       }));
     } catch {
       // Best-effort persistence; a failed write is non-fatal.
     }
   }, [smartNotifs, biometric, mealNotifs, napNotifs, photoNotifs, milestoneNotifs,
       photoSharing, classPhotos, analyticsSharing,
-      selectedLanguage, autoTranslate, targetLanguage,
-      autoPayEnabled, autoPayDay]);
+      selectedLanguage, autoTranslate, targetLanguage]);
 
   useEffect(() => {
     savePreferences();
@@ -235,8 +223,6 @@ export const ProfileScreen = () => {
       handleBiometricToggle();
     } else if (label === 'Offline Mode') {
       setOfflineMode(!offlineMode);
-    } else {
-      showAlert(label, `This feature requires server integration and will be available in a future update.`);
     }
   };
 
@@ -247,7 +233,7 @@ export const ProfileScreen = () => {
     ]);
   };
 
-  const pendingAmount = invoices.filter((inv) => inv.status === 'pending').reduce((sum, inv) => sum + inv.amount, 0);
+  const pendingAmount = invoices.filter((inv) => inv.status === 'pending' || inv.status === 'overdue').reduce((sum, inv) => sum + inv.amount, 0);
 
   const parentMenuSections: MenuSection[] = [
     {
@@ -264,16 +250,12 @@ export const ProfileScreen = () => {
       title: 'Communication',
       items: [
         { icon: 'notifications-outline', label: 'Notification Preferences', subtitle: smartNotifs ? 'Smart notifications enabled' : 'All notifications', sub: 'notifications' },
-        { icon: 'language-outline', label: 'Language', subtitle: selectedLanguage, sub: 'language' },
-        { icon: 'chatbubbles-outline', label: 'Translation Settings', subtitle: autoTranslate ? `Auto-translate to ${targetLanguage}` : 'Auto-translate: Off', sub: 'translation' },
       ],
     },
     {
       title: 'Billing',
       items: [
-        { icon: 'card-outline', label: 'Payment Methods', subtitle: paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file', sub: 'payment_methods' },
         { icon: 'receipt-outline', label: 'Invoices & Receipts', subtitle: pendingAmount > 0 ? `$${pendingAmount.toFixed(2)} pending` : 'All paid', sub: 'invoices' },
-        { icon: 'star-outline', label: 'Subscription', subtitle: 'Manage your plan', sub: 'subscription' },
       ],
     },
     {
@@ -282,7 +264,7 @@ export const ProfileScreen = () => {
         { icon: 'lock-closed-outline', label: 'Privacy Settings', subtitle: 'Consent controls', sub: 'privacy' },
         { icon: 'key-outline', label: 'Change Password', sub: 'change_password' },
         { icon: 'finger-print-outline', label: 'Biometric Login', subtitle: biometric ? 'Enabled' : 'Disabled' },
-        { icon: 'cloud-download-outline', label: 'Download My Data', sub: 'download_data' },
+        { icon: 'cloud-download-outline', label: 'Download My Data', subtitle: 'Export your data or delete your account', sub: 'download_data' },
       ],
     },
   ];
@@ -291,10 +273,7 @@ export const ProfileScreen = () => {
     {
       title: 'Classroom',
       items: [
-        { icon: 'people-outline', label: selectedChild.classroom || 'Classroom', subtitle: 'View classroom details' },
-        { icon: 'calendar-outline', label: 'Attendance', subtitle: 'View from Dashboard' },
         { icon: 'book-outline', label: 'Lesson Plans', subtitle: 'View weekly plans', sub: 'lesson_plans' },
-        { icon: 'clipboard-outline', label: 'Reports', subtitle: 'Generate daily reports' },
       ],
     },
     {
@@ -303,11 +282,14 @@ export const ProfileScreen = () => {
         { icon: 'notifications-outline', label: 'Notifications', sub: 'notifications' },
         { icon: 'cloud-offline-outline', label: 'Offline Mode', subtitle: offlineMode ? 'Auto-sync when online' : 'Disabled' },
         { icon: 'lock-closed-outline', label: 'Privacy & Security', sub: 'privacy' },
+        { icon: 'key-outline', label: 'Change Password', sub: 'change_password' },
+        { icon: 'finger-print-outline', label: 'Biometric Login', subtitle: biometric ? 'Enabled' : 'Disabled' },
+        { icon: 'cloud-download-outline', label: 'Download My Data', subtitle: 'Export your data or delete your account', sub: 'download_data' },
       ],
     },
   ];
 
-  const menuSections = currentRole === 'parent' ? parentMenuSections : caregiverMenuSections;
+  const menuSections = currentRole === 'parent' || currentRole === 'family' ? parentMenuSections : caregiverMenuSections;
 
   const renderSubScreen = () => {
     switch (subScreen) {
@@ -424,55 +406,6 @@ export const ProfileScreen = () => {
                 </View>
               </TouchableOpacity>
             ))}
-            <View style={styles.autoPaySection}>
-              <View style={styles.prefRow}>
-                <View style={styles.prefInfo}>
-                  <Text style={styles.prefLabel}>Auto-Pay</Text>
-                  <Text style={styles.prefDesc}>Automatically pay invoices on a set day</Text>
-                </View>
-                <Switch
-                  value={autoPayEnabled}
-                  onValueChange={setAutoPayEnabled}
-                  trackColor={{ false: Colors.borderLight, true: Colors.primaryLight }}
-                  thumbColor={autoPayEnabled ? Colors.primary : Colors.textMuted}
-                />
-              </View>
-              {autoPayEnabled && (
-                <View style={{ marginTop: Spacing.md }}>
-                  <Text style={styles.formLabel}>Payment Day of Month</Text>
-                  <View style={styles.dayPickerRow}>
-                    {[1, 5, 10, 15, 20, 25].map((day) => (
-                      <TouchableOpacity
-                        key={day}
-                        style={[styles.dayChip, autoPayDay === day && styles.dayChipActive]}
-                        onPress={() => setAutoPayDay(day)}
-                      >
-                        <Text style={[styles.dayChipText, autoPayDay === day && styles.dayChipTextActive]}>{day}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <Text style={styles.formLabel}>Payment Method</Text>
-                  <View style={styles.cardDisplay}>
-                    <Ionicons name="card" size={20} color={Colors.primary} />
-                    <Text style={styles.cardDisplayText}>{paymentCard ? `${paymentCard.type} ending in ${paymentCard.last4}` : 'No card on file'}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.saveButton}
-                    onPress={async () => {
-                      await savePreferences();
-                      showAlert(
-                        'Auto-Pay Preference Saved',
-                        autoPayEnabled
-                          ? `Your auto-pay preference (day ${autoPayDay} of each month) has been saved.`
-                          : 'Auto-pay is turned off.'
-                      );
-                    }}
-                  >
-                    <Text style={styles.saveButtonText}>Save Auto-Pay Settings</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
           </View>
         );
       case 'invoice_detail': {
@@ -508,7 +441,7 @@ export const ProfileScreen = () => {
               <Text style={[styles.lineItemDesc, { fontWeight: '700', color: Colors.textPrimary }]}>Total</Text>
               <Text style={[styles.lineItemAmount, { fontWeight: '700', color: Colors.textPrimary }]}>${selectedInvoice.amount.toFixed(2)}</Text>
             </View>
-            {selectedInvoice.status === 'pending' && (
+            {(selectedInvoice.status === 'pending' || selectedInvoice.status === 'overdue') && (
               <TouchableOpacity
                 style={styles.payButton}
                 onPress={() => {
@@ -536,7 +469,7 @@ export const ProfileScreen = () => {
               onPress={() => shareContent(`Invoice: ${selectedInvoice.description}\nAmount: $${selectedInvoice.amount.toFixed(2)}\nStatus: ${selectedInvoice.status}\n\n— Little Journey`)}
             >
               <Ionicons name="download-outline" size={18} color={Colors.primary} />
-              <Text style={styles.addButtonText}>Download Receipt</Text>
+              <Text style={styles.addButtonText}>Share Invoice Summary</Text>
             </TouchableOpacity>
           </View>
         );
@@ -828,7 +761,10 @@ export const ProfileScreen = () => {
                 onPress={() => {
                   Alert.alert(
                     'Delete My Account',
-                    'Are you sure you want to permanently delete your account? All your data will be erased and cannot be recovered.',
+                    'Are you sure you want to permanently delete your account? All your data will be erased and cannot be recovered.' +
+                      (currentRole === 'admin'
+                        ? '\n\nYou are a daycare administrator: if you are the only one, your daycare\'s subscription will be cancelled. Invite another administrator first if the daycare should keep using Little Journey.'
+                        : ''),
                     [
                       { text: 'Cancel', style: 'cancel' },
                       {
@@ -872,11 +808,6 @@ export const ProfileScreen = () => {
             </View>
           </View>
         );
-      case 'payment_methods':
-        // Real Stripe SetupIntent-backed card management.
-        return <PaymentMethodsScreen onClose={() => setSubScreen(null)} />;
-      case 'subscription':
-        return <SubscriptionScreen type={currentRole === 'admin' ? 'daycare' : 'parent'} onClose={() => setSubScreen(null)} />;
       case 'lesson_plans':
         return (
           <View>
@@ -987,7 +918,9 @@ export const ProfileScreen = () => {
           )}
         </LinearGradient>
 
-        {/* Role Switcher */}
+        {/* Role Switcher — demo/preview only. On a real account the role comes from the
+            server; this would swap the UI to a role the user doesn't have. */}
+        {auth.isDemoMode && (
         <View style={styles.roleSwitcher}>
           <View style={[styles.roleSwitcherCard, Shadows.medium]}>
             <Ionicons name="swap-horizontal" size={20} color={Colors.primary} />
@@ -1005,25 +938,7 @@ export const ProfileScreen = () => {
             />
           </View>
         </View>
-
-        {/* Dark Mode Toggle */}
-        <View style={styles.roleSwitcher}>
-          <View style={[styles.roleSwitcherCard, Shadows.medium]}>
-            <Ionicons name={isDark ? 'moon' : 'sunny'} size={20} color={isDark ? Colors.accent : Colors.primary} />
-            <View style={styles.roleSwitcherInfo}>
-              <Text style={styles.roleSwitcherTitle}>Dark Mode</Text>
-              <Text style={styles.roleSwitcherDesc}>{isDark ? 'Switch to light theme' : 'Switch to dark theme'}</Text>
-            </View>
-            <Switch
-              value={isDark}
-              onValueChange={toggleTheme}
-              trackColor={{ false: Colors.borderLight, true: Colors.primaryLight }}
-              thumbColor={isDark ? Colors.accent : Colors.textMuted}
-              accessibilityLabel="Toggle dark mode"
-              accessibilityRole="switch"
-            />
-          </View>
-        </View>
+        )}
 
         {menuSections.map((section, sIndex) => (
           <View key={sIndex} style={styles.menuSection}>

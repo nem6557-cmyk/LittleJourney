@@ -467,6 +467,7 @@ export const GalleryScreen = () => {
               </>
             )}
 
+            {filteredPhotos.length > 0 && (
             <View style={styles.galleryActions}>
               <TouchableOpacity
                 style={[styles.galleryAction, Shadows.small]}
@@ -483,6 +484,7 @@ export const GalleryScreen = () => {
                 <Text style={[styles.galleryActionText, { color: Colors.secondary }]}>Share Album</Text>
               </TouchableOpacity>
             </View>
+            )}
           </>
         )}
 

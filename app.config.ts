@@ -14,7 +14,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   version: APP_VERSION,
   orientation: 'portrait',
   icon: './assets/icon.png',
-  userInterfaceStyle: 'automatic',
+  // The UI is light-only today (screens use the static light palette); declaring
+  // 'automatic' would make system chrome (keyboard, alerts) go dark under a light UI.
+  userInterfaceStyle: 'light',
   newArchEnabled: true,
   scheme: 'littlejourney',
   description:
@@ -95,6 +97,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
         },
         {
+          NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypePaymentInfo',
+          NSPrivacyCollectedDataTypeLinked: true,
+          NSPrivacyCollectedDataTypeTracking: false,
+          NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
+        },
+        {
+          NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeDeviceID',
+          NSPrivacyCollectedDataTypeLinked: true,
+          NSPrivacyCollectedDataTypeTracking: false,
+          NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
+        },
+        {
           NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypePurchaseHistory',
           NSPrivacyCollectedDataTypeLinked: true,
           NSPrivacyCollectedDataTypeTracking: false,
@@ -135,6 +149,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     package: 'com.littlejourney.app',
     edgeToEdgeEnabled: true,
+    // Don't let Android auto-backup copy cached child/message data to Google Drive.
+    allowBackup: false,
+    // FCM credentials for Android push (set as an EAS "file" env var; see docs).
+    ...(process.env.GOOGLE_SERVICES_JSON ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON } : {}),
+    // Permissions pulled in transitively by libraries but not used by this app.
+    // Play Console flags broad media/microphone access during review.
+    blockedPermissions: [
+      'android.permission.RECORD_AUDIO',
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_MEDIA_VIDEO',
+      'android.permission.READ_MEDIA_AUDIO',
+      'android.permission.SYSTEM_ALERT_WINDOW',
+    ],
     permissions: [
       'CAMERA',
       'RECEIVE_BOOT_COMPLETED',
@@ -167,7 +195,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       'expo-notifications',
       {
-        icon: './assets/icon.png',
+        // Android requires a monochrome (white-on-transparent) small icon.
+        icon: './assets/notification-icon.png',
         color: '#6C63FF',
       },
     ],

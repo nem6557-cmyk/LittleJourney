@@ -31,11 +31,11 @@ FOR DAYCARE CENTERS:
 - Onboard new families with a simple invite code system
 
 PLANS & PRICING:
-- Parents: Free to use (optional premium upgrade for $10/month with advanced features)
+- Families: free to use — there is nothing for parents to buy
 - Daycare Starter: $29/month — up to 20 children, 1 classroom
 - Daycare Professional: $59/month — up to 50 children, 5 classrooms
 - Daycare Enterprise: $99/month — unlimited children and classrooms
-- All daycare plans include a free 14-day trial
+- All daycare plans include a free 14-day trial. Plans are purchased and managed on the Little Journey website (not inside the mobile app)
 
 PRIVACY & SECURITY:
 - Built with COPPA/FERPA-aware consent and access-control workflows
@@ -100,11 +100,11 @@ FEATURES FOR DAYCARE CENTERS
 - Onboard new families with a simple invite code system
 
 PLANS AND PRICING
-- Parents: Free to use (optional premium upgrade for advanced features)
+- Families: free to use — there is nothing for parents to buy
 - Daycare Starter: $29/month — up to 20 children, 1 classroom
 - Daycare Professional: $59/month — up to 50 children, 5 classrooms
 - Daycare Enterprise: $99/month — unlimited children and classrooms
-- All daycare plans include a free 14-day trial
+- All daycare plans include a free 14-day trial. Plans are purchased and managed on the Little Journey website (not inside the mobile app)
 
 PRIVACY AND SECURITY
 - Built with COPPA/FERPA-aware consent and access-control workflows
@@ -217,7 +217,7 @@ We do not sell personal information or share it for third-party advertising. Dat
 #### 7. Data Retention and Deletion
 
 - Account data is retained while your account is active
-- You can request export or deletion through Profile > Privacy > Data Management
+- You can request export or deletion through Profile > Download My Data (export and account deletion)
 - Account-level data is deleted within the published support timeline after a verified request
 - Daycare records, child activity logs, incident records, attendance records, invoices, and photos may also be controlled by the daycare operator and may be retained where required for childcare operations, legal obligations, dispute resolution, payment records, backup integrity, or safety documentation
 - Backup data is purged on the configured backup retention schedule
@@ -270,12 +270,12 @@ Little Journey Daycare is a childcare communication platform that enables real-t
 
 #### 4. Subscription and Billing
 
-- Daycare centers may subscribe to paid plans (Starter, Professional, or Enterprise)
-- All daycare plans include a 14-day free trial
-- Subscriptions renew automatically unless canceled before the renewal date
-- Parents may optionally subscribe to premium features ($10/month)
-- Payments are processed securely through Stripe
-- Refunds may be requested within 30 days of purchase
+- Daycare centers may subscribe to paid plans (Starter, Professional, or Enterprise), purchased and managed on the Little Journey website
+- All daycare plans include a 14-day free trial, then renew monthly until canceled
+- Cancellation takes effect at the end of the current billing period
+- Families use Little Journey free of charge
+- Tuition invoices are an agreement between a family and their daycare; payments are processed by Stripe on the daycare's behalf, Little Journey retains a 5% platform fee, and Stripe's processing fees apply
+- Tuition refund requests go to the daycare
 
 #### 5. Acceptable Use
 
